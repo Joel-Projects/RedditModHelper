@@ -1,0 +1,12 @@
+git+https://github.com/Rapptz/discord-ext-menus@84caae8038d0d
+discord.py
+asyncpraw
+BotUtils
+lxml
+psutil
+asyncpg>=0.12.0
+click
+parsedatetime
+lru_dict
+python-dateutil
+uvloop
