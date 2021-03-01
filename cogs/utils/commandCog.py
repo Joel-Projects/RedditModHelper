@@ -50,10 +50,6 @@ class CommandCog(commands.Cog):
         return await context.send(embed=embed)
 
     async def statusEmbed(self, context, message, title="Status", *fields):
-        """
-
-        :param message:
-        """
         embed = Embed(title=title, description=message, color=discord.Color.orange())
         embed.set_footer(
             text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
@@ -64,10 +60,6 @@ class CommandCog(commands.Cog):
         return msg
 
     async def statusUpdateEmbed(self, msg, message, *fields):
-        """
-
-        :param message:
-        """
         if msg and msg.embeds:
             oldEmbed: Embed = msg.embeds[0]
             embed = Embed(
@@ -85,10 +77,6 @@ class CommandCog(commands.Cog):
         return msg
 
     async def statusDoneEmbed(self, msg, message, *fields):
-        """
-
-        :param message:
-        """
         if msg and msg.embeds:
             oldEmbed: Embed = msg.embeds[0]
             embed = Embed(
@@ -106,11 +94,6 @@ class CommandCog(commands.Cog):
         return msg
 
     async def cancelledEmbed(self, context, message):
-        """
-
-        :param msg:
-        :return:
-        """
         embed = Embed(color=discord.Color.greyple())
         embed.title = f"Cancelled"
         embed.description = message
@@ -155,7 +138,7 @@ class CommandCog(commands.Cog):
         try:
             await redditor._fetch()
         except asyncprawcore.NotFound:
-            await self.errorEmbed(context, f"Could not find /u/{mod}")
+            await self.errorEmbed(context, f"Could not find u/{mod}")
             return None
         else:
             if returnAttr:
@@ -172,7 +155,7 @@ class CommandCog(commands.Cog):
             except asyncprawcore.exceptions.Redirect as error:
                 if error.path == "/subreddits/search":
                     exists = False
-                    await self.errorEmbed(context, f"{subreddit} does not exist.")
+                    await self.errorEmbed(context, f"r/{subreddit} does not exist.")
             mods = await sub.moderator()
             me = await self.reddit.user.me()
             return {"exists": exists, "isMod": me in mods, "subreddit": subreddit}
@@ -183,11 +166,6 @@ class CommandCog(commands.Cog):
     async def checkModSub(
         self, context, subreddit
     ) -> asyncpraw.reddit.models.Subreddit:
-        """
-
-        :param subreddit:
-        :return:
-        """
         exists = True
         try:
             try:
@@ -213,27 +191,31 @@ class CommandCog(commands.Cog):
             if type(error) != asyncprawcore.exceptions.Redirect:
                 self.log.exception(error)
 
-    async def getsub(self, context, sub: str):
-        """
-
-        :param sub:
-        :return:
-        """
-        subResults = await self.checkSub(context, sub)
-        subreddit = subResults["subreddit"]
-        if subreddit:
-            return subreddit
+    async def get_sub(self, context, sub: str):
+        try:
+            sub = await self.reddit.subreddit(sub, fetch=True)
+            sub = sub.display_name
+        except asyncprawcore.exceptions.Redirect as error:
+            if error.path == "/subreddits/search":
+                await self.errorEmbed(context, f"r/{sub} does not exist.")
+        if sub:
+            return sub
         else:
-            await self.errorEmbed(context, f"Could not find /r/{sub}")
+            await self.errorEmbed(context, f"Could not find r/{sub}")
 
     async def getSubFromChannel(self, context):
-        """
-
-        :param context:
-        :return:
-        """
         results = await self.sql.fetch(
-            "SELECT subreddit FROM subchannels WHERE channelid=$1", context.channel.id
+            "SELECT name FROM subreddits WHERE channel_id=$1", context.channel.id
+        )
+        results = parseSql(results)
+        if results:
+            return results[0][0]
+        else:
+            return None
+
+    async def getAuthorizedUser(self, context):
+        results = await self.sql.fetch(
+            "SELECT modlog_account FROM subreddits WHERE channel_id=$1", context.channel.id
         )
         results = parseSql(results)
         if results:
@@ -242,11 +224,6 @@ class CommandCog(commands.Cog):
             return None
 
     async def getBotConfig(self, key):
-        """
-
-        :param key:
-        :return: results
-        """
         results = await self.sql.fetch("SELECT * FROM settings WHERE key=$1", key)
         if len(results) > 0:
             return json.loads(results[0][1])["value"]
@@ -290,7 +267,7 @@ class CommandCog(commands.Cog):
         except KeyError:
             await self.errorEmbed(
                 context,
-                f"[/u/{user}](https://reddit.com/u/{user}) does not moderate any subreddits",
+                f"[u/{user}](https://reddit.com/u/{user}) does not moderate any subreddits",
             )
 
     async def userAuthedCheck(self, context):

@@ -62,6 +62,19 @@ class Context(commands.Context):
             return ref.resolved.to_reference()
         return None
 
+    async def ask(self, message):
+        await self.send(message)
+
+        def message_check(msg):
+            return msg.author.id == self.author.id and self.channel == msg.channel and msg.content.lower() != '!c'
+
+        try:
+            answer: discord.Message = await self.bot.wait_for("message", check=message_check, timeout=30.0)
+            if answer:
+                return answer.content
+        except asyncio.TimeoutError:
+            await self.send("Took too long.", delete_after=5)
+
     async def disambiguate(self, matches, entry):
         if len(matches) == 0:
             raise ValueError("No results found.")

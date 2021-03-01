@@ -14,12 +14,13 @@ import config
 from bot import DiscordBot, initial_extensions, log, services
 from cogs.utils.db import Table
 
-try:
-    import uvloop
-except ImportError:
-    pass
-else:
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+if sys.platform != 'darwin':
+    try:
+        import uvloop
+    except ImportError:
+        pass
+    else:
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 pool = None
 
@@ -47,7 +48,6 @@ def setup_logging():
         log.setLevel(logging.INFO)
         if sys.platform == "darwin":
             logging.basicConfig(level=logging.DEBUG)
-
         log.info(f"Starting {config.bot_name} | Version: {config.__version__}")
         yield
     finally:
@@ -59,6 +59,12 @@ def setup_logging():
 
 def run_bot():
     loop = asyncio.get_event_loop()
+    if sys.platform == 'darwin':
+        try:
+            import nest_asyncio
+            nest_asyncio.apply(loop)
+        except ImportError:
+            pass
     kwargs = {
         "command_timeout": 300,
         "max_size": 20,
@@ -286,87 +292,6 @@ def drop(cog, quiet):
         return
 
     run(remove_databases(pool, cog, quiet))
-
-
-@main.command(short_help="migrates from JSON files")
-@click.argument("cogs", nargs=-1)
-@click.pass_context
-def convertjson(context, cogs):
-    """This migrates our older JSON files to PostgreSQL
-
-    Note, this deletes all previous entries in the table
-    so you can consider this to be a destructive decision.
-
-    Do not pass in cog names with "cogs." as a prefix.
-
-    This also connects us to Discord itself so we can
-    use the cache for our migrations.
-
-    The point of this is just to do some migration of the
-    data from v3 -> v4 once and call it a day.
-    """
-
-    import data_migrators
-
-    run = asyncio.get_event_loop().run_until_complete
-
-    if not cogs:
-        to_run = [
-            (getattr(data_migrators, attr), attr.replace("migrate_", ""))
-            for attr in dir(data_migrators)
-            if attr.startswith("migrate_")
-        ]
-    else:
-        to_run = []
-        for cog in cogs:
-            try:
-                elem = getattr(data_migrators, f"migrate_{cog}")
-            except AttributeError:
-                click.echo(f"invalid cog name given, {cog}.", err=True)
-                return
-
-            to_run.append((elem, cog))
-
-    async def make_pool():
-        return await asyncpg.create_pool(**postgres)
-
-    try:
-        pool = run(make_pool())
-    except Exception:
-        click.echo(
-            f"Could not create PostgreSQL connection pool.\n{traceback.format_exc()}",
-            err=True,
-        )
-        return
-
-    client = discord.AutoShardedClient()
-
-    @client.event
-    async def on_ready():
-        click.echo(f"successfully booted up bot {client.user} (ID: {client.user.id})")
-        await client.logout()
-
-    try:
-        run(client.login(config.token))
-        run(client.connect(reconnect=False))
-    except:
-        pass
-
-    extensions = [f"cogs.{name}" for _, name in to_run]
-    context.invoke(init, cogs=extensions)
-
-    for migrator, _ in to_run:
-        try:
-            run(migrator(pool, client))
-        except Exception:
-            click.echo(
-                f"[error] {migrator.__name__} has failed, terminating\n{traceback.format_exc()}",
-                err=True,
-            )
-            return
-        else:
-            click.echo(f"[{migrator.__name__}] completed successfully")
-
 
 if __name__ == "__main__":
     try:

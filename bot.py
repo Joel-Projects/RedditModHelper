@@ -28,8 +28,10 @@ initial_extensions = (
     "cogs.admin",
     "cogs.meta",
     "cogs.misc",
+    "cogs.redditStats",
     "cogs.settings",
     "cogs.stats",
+    "cogs.subManagement",
 )
 
 

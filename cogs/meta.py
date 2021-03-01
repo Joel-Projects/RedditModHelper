@@ -1,13 +1,17 @@
 import asyncio
 import copy
+import datetime
 import json
 import os
+import string
 import sys
 import time
+import dateutil
 import unicodedata
 from collections import Counter
 from typing import Union
 
+import dateparser as dateparser
 import discord
 from discord import Embed
 from discord.ext import commands, menus
@@ -18,6 +22,7 @@ from .utils import time as utime
 from .utils.commandCog import CommandCog
 from .utils.commands import command, group
 from .utils.paginator import RoboPages
+from .utils.utils import ordinal
 
 
 class Prefix(commands.Converter):
@@ -227,12 +232,53 @@ class PaginatedHelpCommand(commands.HelpCommand):
         await self.context.release()
         await menu.start(self.context)
 
-    def common_command_formatting(self, embed_like, command):
-        embed_like.title = self.get_command_signature(command)
-        if command.description:
-            embed_like.description = f"{command.description}\n\n{command.help}"
+    def parseDate(self, date: str = None):
+        """
+        :param date:
+        :return datetime.datetime: datetime object
+        """
+        settings = dateparser.conf.Settings()
+        settings.PREFER_DAY_OF_MONTH = 'first'
+        settings.RETURN_AS_TIMEZONE_AWARE = True
+        settings.TIMEZONE = 'UTC'
+        settings.PREFER_DATES_FROM = 'past'
+        try:
+            parsedDate = dateparser.parse(date)
+            return parsedDate
+        except Exception:
+            return
+
+    def checkDate(self, date, *, lastMonth=False, currentMonth=False, today=False):
+        if date:
+            if isinstance(date, int):
+                if 1 <= date <= 12:
+                    parsedDate = self.parseDate(date)
+            else:
+                parsedDate = self.parseDate(date)
         else:
-            embed_like.description = command.help or "No help found..."
+            if today:
+                parsedDate = self.parseDate(time.strftime('%m/%d/%Y %I:%M:%S %p', time.localtime()))
+            else:
+                if lastMonth:
+                    months = 1
+                if currentMonth:
+                    months = 0
+                parsedDate = self.parseDate(time.strftime('%m', time.gmtime(datetime.timestamp(datetime.today() - dateutil.relativedelta.relativedelta(months=months)))))
+        return parsedDate
+
+    def getDateStr(self, dateStr, **kwargs):
+        date = self.checkDate(dateStr, **kwargs)
+        return date.strftime(f'%b {ordinal(date.day)}, %Y at %I:%M %p')
+
+    def common_command_formatting(self, page_or_embed, command):
+        page_or_embed.title = self.get_command_signature(command)
+        commandHelp = command.help
+        if command.name == 'matrix' or command.name == 'tbmatrix':
+            commandHelp = command.help.format(**{'none' if dateStr == 'none' else dateStr: self.getDateStr(None, currentMonth=True) if dateStr == 'none' else self.getDateStr(dateStr.replace('_', ' ')) for dateStr in [tup[1] for tup in string.Formatter().parse(command.help) if tup[1] is not None]})
+        if command.description:
+            page_or_embed.description = f'{command.description}\n\n{commandHelp}'
+        else:
+            page_or_embed.description = commandHelp or 'No help found...'
 
     async def send_command_help(self, command):
         # No pagination necessary for a single command.
