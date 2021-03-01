@@ -1,0 +1,10 @@
+{
+    "apps": [
+        {
+            "name": "RedditModHelper",
+            "script": "./launcher.py",
+            "interpreter": ".venv/bin/python",
+            "interpreter_args": "-u"
+        }
+    ]
+}
