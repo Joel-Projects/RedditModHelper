@@ -16,7 +16,7 @@ from typing import Optional
 import discord
 from discord.ext import commands
 
-from .utils.commandCog import CommandCog
+from .utils.command_cog import CommandCog
 from .utils.commands import command
 
 
@@ -482,7 +482,7 @@ class Admin(CommandCog):
             new_context._db = context._db
             await self.bot.invoke(new_context)
         else:
-            await self.errorEmbed(context, f"Command: `{command}` doesn't exist!")
+            await self.error_embed(context, f"Command: `{command}` doesn't exist!")
 
     @command(hidden=True)
     async def do(self, context, times: int, *, command):

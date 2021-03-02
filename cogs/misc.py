@@ -1,4 +1,4 @@
-from .utils.commandCog import CommandCog
+from .utils.command_cog import CommandCog
 
 
 class Misc(CommandCog):

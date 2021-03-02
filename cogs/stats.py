@@ -18,7 +18,7 @@ import psutil
 from discord.ext import commands, menus, tasks
 
 from .utils import context, db, formats, time
-from .utils.commandCog import CommandCog
+from .utils.command_cog import CommandCog
 from .utils.commands import command, group
 from .utils.context import Context
 

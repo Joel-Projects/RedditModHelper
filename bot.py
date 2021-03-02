@@ -15,7 +15,7 @@ from discord.ext import commands, tasks
 
 import config
 from cogs.utils import context as context_cls
-from cogs.utils.commandCog import CommandCog
+from cogs.utils.command_cog import CommandCog
 from cogs.utils.config import Config
 
 bot_name = config.bot_name
@@ -28,10 +28,11 @@ initial_extensions = (
     "cogs.admin",
     "cogs.meta",
     "cogs.misc",
-    "cogs.redditStats",
+    "cogs.permissions",
+    "cogs.reddit_stats",
     "cogs.settings",
     "cogs.stats",
-    "cogs.subManagement",
+    "cogs.sub_management",
 )
 
 
@@ -46,7 +47,7 @@ def _prefix_callable(bot, msg):
     return base
 
 
-class DiscordBot(commands.AutoShardedBot):
+class RedditModHelper(commands.AutoShardedBot):
     def __init__(self, pool):
         allowed_mentions = discord.AllowedMentions(
             roles=True, everyone=True, users=True
@@ -77,16 +78,15 @@ class DiscordBot(commands.AutoShardedBot):
         self.owner_id = config.owner_id
         self.services = services
         self.credmgr = services.credmgr
-        self.credmgrBot = self.credmgr.bot(bot_name)
+        self.credmgr_bot = self.credmgr.bot(bot_name)
         self.reddit = asyncpraw.Reddit(
             **services.reddit("Lil_SpazJoekp").config._settings
         )
-        self.tempReddit = partial(self.switchRedditInstance, bot=self)
+        self.tempReddit = partial(self.switch_reddit_instance, bot=self)
         self.pool: asyncpg.pool.Pool = pool
         self.sql: asyncpg.pool.Pool = self.pool
         self.log = log
-        self.runningTasks = {}
-        self.taskNames = {}
+        self.running_tasks = {}
         # shard_id: List[datetime.datetime]
         # shows the last attempted IDENTIFYs and RESUMEs
         self.resumes = defaultdict(list)
@@ -122,16 +122,17 @@ class DiscordBot(commands.AutoShardedBot):
 
     async def on_command_error(self, context, error):
         if isinstance(error, commands.NoPrivateMessage):
-            await CommandCog.errorEmbed(
+            await CommandCog.error_embed(
                 context, "This command cannot be used in private messages."
             )
         elif isinstance(error, commands.DisabledCommand):
-            await CommandCog.errorEmbed(
+            await CommandCog.error_embed(
                 context, "Sorry. This command is disabled and cannot be used."
             )
         elif isinstance(error, commands.CheckFailure):
-            await CommandCog.errorEmbed(context, "You're not allowed to do that!")
+            await CommandCog.error_embed(context, "You're not allowed to do that!")
         elif isinstance(error, commands.CommandInvokeError):
+            traceback.print_tb(error.original.__traceback__)
             if not self.debug:
                 log.error(
                     f"In {context.command.qualified_name}:\n{error.original.__class__.__name__}: {error.original}"
@@ -139,9 +140,20 @@ class DiscordBot(commands.AutoShardedBot):
             else:
                 print(f"In {context.command.qualified_name}:")
                 print(f"{error.original.__class__.__name__}: {error.original}")
-            traceback.print_tb(error.original.__traceback__)
-        elif isinstance(error, commands.ArgumentParsingError):
+        elif isinstance(error, (commands.ArgumentParsingError, commands.MissingRequiredArgument)):
             await context.send(error)
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await context.send_help(context.command)
+            await context.send(error)
+        else:
+            traceback.print_tb(error.original.__traceback__)
+            if not self.debug:
+                log.error(
+                    f"In {context.command.qualified_name}:\n{error.original.__class__.__name__}: {error.original}"
+                )
+            else:
+                print(f"In {context.command.qualified_name}:")
+                print(f"{error.original.__class__.__name__}: {error.original}")
 
     def get_guild_prefixes(self, guild, *, local_inject=_prefix_callable):
         proxy_msg = discord.Object(id=0)
@@ -297,7 +309,7 @@ class DiscordBot(commands.AutoShardedBot):
         log.info(f"Ready: {self.user} (ID: {self.user.id})")
         self.print_servers.start()
 
-    class switchRedditInstance:
+    class switch_reddit_instance:
         def __init__(self, user, bot):
             self.user = user
             self.bot = bot
@@ -331,12 +343,12 @@ class DiscordBot(commands.AutoShardedBot):
             return
 
         await self.invoke(context)
-        if len(self.runningTasks.keys()) > 0:
+        if len(self.running_tasks.keys()) > 0:
             done = False
             tasks = [
                 task
-                for user in self.runningTasks.keys()
-                for task in self.runningTasks[user]
+                for user in self.running_tasks.keys()
+                for task in self.running_tasks[user]
             ]
             while not done:
                 await asyncio.sleep(1)
@@ -348,27 +360,27 @@ class DiscordBot(commands.AutoShardedBot):
             return
         await self.process_commands(message)
 
-    def startTask(self, context, func, *, taskName=None):
+    def start_task(self, context, func, *, taskName=None):
         user = context.author.id
         task = self.loop.create_task(func)
 
         task.add_done_callback(
-            partial(self.taskCompletionHandler, task=task, user=user, context=context)
+            partial(self.task_completion_handler, task=task, user=user, context=context)
         )
-        if not user in self.runningTasks:
-            self.runningTasks[user] = {}
-        self.runningTasks[user][task] = taskName or context.message.content.replace(
+        if not user in self.running_tasks:
+            self.running_tasks[user] = {}
+        self.running_tasks[user][task] = taskName or context.message.content.replace(
             context.invoked_with, context.command.name
         )
         return task
 
-    def taskCompletionHandler(self, task, user, context):
-        tasks = self.runningTasks.get(user, None)
+    def task_completion_handler(self, task, user, context):
+        tasks = self.running_tasks.get(user, None)
         if tasks:
             if task in tasks:
-                self.runningTasks[user].pop(task)
-                if len(self.runningTasks[user]) == 0:
-                    self.runningTasks.pop(user)
+                self.running_tasks[user].pop(task)
+                if len(self.running_tasks[user]) == 0:
+                    self.running_tasks.pop(user)
 
     async def close(self):
         await super().close()

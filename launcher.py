@@ -11,7 +11,7 @@ import click
 import discord
 
 import config
-from bot import DiscordBot, initial_extensions, log, services
+from bot import RedditModHelper, initial_extensions, log, services
 from cogs.utils.db import Table
 
 if sys.platform != 'darwin':
@@ -76,7 +76,7 @@ def run_bot():
         click.echo("Could not set up PostgreSQL. Exiting.", file=sys.stderr)
         log.exception(f"Could not set up PostgreSQL: {error}")
         return
-    bot = DiscordBot(pool)
+    bot = RedditModHelper(pool)
     bot.run()
 
 

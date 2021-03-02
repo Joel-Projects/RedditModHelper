@@ -66,11 +66,13 @@ class Context(commands.Context):
         await self.send(message)
 
         def message_check(msg):
-            return msg.author.id == self.author.id and self.channel == msg.channel and msg.content.lower() != '!c'
+            return msg.author.id == self.author.id and self.channel == msg.channel
 
         try:
             answer: discord.Message = await self.bot.wait_for("message", check=message_check, timeout=30.0)
             if answer:
+                if answer.content.lower() == '!c':
+                    raise asyncio.CancelledError
                 return answer.content
         except asyncio.TimeoutError:
             await self.send("Took too long.", delete_after=5)

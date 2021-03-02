@@ -1,28 +1,32 @@
 import asyncio
-import hashlib
 import json
 import time
+from typing import TYPE_CHECKING
 
 import asyncpraw
 import asyncprawcore
+import credmgr
 import discord
+from asyncpg import Pool
 from discord import Embed
 from discord.ext import commands
 
-from .utils import parseSql
+from .utils import parse_sql
 
+if TYPE_CHECKING:
+    from ...bot import RedditModHelper
 
 class CommandCog(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: "RedditModHelper" = bot
         self.log = bot.log
         self.reddit = bot.reddit
-        self.sql = bot.sql
+        self.sql: Pool = bot.sql
         self.tempReddit = None
         super().__init__()
 
     @staticmethod
-    async def errorEmbed(context, message):
+    async def error_embed(context, message):
         embed = Embed(
             title="Command Error", color=discord.Color.red(), description=message
         )
@@ -31,7 +35,7 @@ class CommandCog(commands.Cog):
         )
         return await context.send(embed=embed)
 
-    async def warningEmbed(self, context, message):
+    async def warning_embed(self, context, message):
         embed = Embed(
             title="Warning", color=discord.Color.orange(), description=message
         )
@@ -40,16 +44,19 @@ class CommandCog(commands.Cog):
         )
         return await context.send(embed=embed)
 
-    async def successEmbed(
+    async def success_embed(
         self, context, message, title="Command Executed Successfully"
     ):
-        embed = Embed(title=title, color=discord.Color.green(), description=message)
+        if isinstance(message, Embed):
+            embed = message
+        else:
+            embed = Embed(title=title, color=discord.Color.green(), description=message)
         embed.set_footer(
             text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
         )
         return await context.send(embed=embed)
 
-    async def statusEmbed(self, context, message, title="Status", *fields):
+    async def status_embed(self, context, message, title="Status", *fields):
         embed = Embed(title=title, description=message, color=discord.Color.orange())
         embed.set_footer(
             text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
@@ -59,7 +66,7 @@ class CommandCog(commands.Cog):
         msg = await context.send(embed=embed)
         return msg
 
-    async def statusUpdateEmbed(self, msg, message, *fields):
+    async def status_update_embed(self, msg, message, *fields):
         if msg and msg.embeds:
             oldEmbed: Embed = msg.embeds[0]
             embed = Embed(
@@ -76,7 +83,7 @@ class CommandCog(commands.Cog):
         await msg.edit(embed=embed)
         return msg
 
-    async def statusDoneEmbed(self, msg, message, *fields):
+    async def status_done_embed(self, msg, message, *fields):
         if msg and msg.embeds:
             oldEmbed: Embed = msg.embeds[0]
             embed = Embed(
@@ -102,8 +109,8 @@ class CommandCog(commands.Cog):
         )
         await context.send(embed=embed)
 
-    async def getBotConfig(self, key):
-        results = parseSql(
+    async def get_bot_config(self, key):
+        results = parse_sql(
             await self.bot.pool.fetch("SELECT * FROM settings WHERE key=$1", key)
         )
         if len(results) > 0:
@@ -111,13 +118,14 @@ class CommandCog(commands.Cog):
         else:
             return None
 
-    async def setBotConfig(self, **kwargs):
+    async def set_bot_config(self, **kwargs):
         update = []
         insert = []
+        results = parse_sql(await self.bot.pool.fetch("SELECT key FROM settings"))
         existing = [
             i.key
-            for i in parseSql(await self.bot.pool.fetch("SELECT key FROM settings"))
-        ]
+            for i in results
+        ] if results else []
         for key, value in kwargs.items():
             data = (key, json.dumps({"value": value}))
             if key in existing:
@@ -133,12 +141,11 @@ class CommandCog(commands.Cog):
                 "INSERT INTO settings (key, value) VALUES ($1, $2)", insert
             )
 
-    async def getMod(self, context, mod: str, returnAttr="name"):
-        redditor = self.reddit.redditor(mod)
+    async def get_mod(self, context, mod: str, returnAttr="name"):
         try:
-            await redditor._fetch()
+            redditor = await self.reddit.redditor(mod, fetch=True)
         except asyncprawcore.NotFound:
-            await self.errorEmbed(context, f"Could not find u/{mod}")
+            await self.error_embed(context, f"Could not find u/{mod}")
             return None
         else:
             if returnAttr:
@@ -146,7 +153,7 @@ class CommandCog(commands.Cog):
             else:
                 return redditor
 
-    async def checkSub(self, context, subreddit):
+    async def check_sub(self, context, subreddit):
         exists = True
         try:
             try:
@@ -155,7 +162,7 @@ class CommandCog(commands.Cog):
             except asyncprawcore.exceptions.Redirect as error:
                 if error.path == "/subreddits/search":
                     exists = False
-                    await self.errorEmbed(context, f"r/{subreddit} does not exist.")
+                    await self.error_embed(context, f"r/{subreddit} does not exist.")
             mods = await sub.moderator()
             me = await self.reddit.user.me()
             return {"exists": exists, "isMod": me in mods, "subreddit": subreddit}
@@ -163,7 +170,7 @@ class CommandCog(commands.Cog):
             if type(error) != asyncprawcore.exceptions.Redirect:
                 self.log.exception(error)
 
-    async def checkModSub(
+    async def check_mod_sub(
         self, context, subreddit
     ) -> asyncpraw.reddit.models.Subreddit:
         exists = True
@@ -174,7 +181,7 @@ class CommandCog(commands.Cog):
             except asyncprawcore.exceptions.Redirect as error:
                 if error.path == "/subreddits/search":
                     exists = False
-                    await self.errorEmbed(
+                    await self.error_embed(
                         context, f"{subreddit.display_name} does not exist."
                     )
                     return None
@@ -183,7 +190,7 @@ class CommandCog(commands.Cog):
             if me in mods:
                 return subreddit
             else:
-                await self.errorEmbed(
+                await self.error_embed(
                     context, f"You don't moderate {subreddit.display_name}"
                 )
                 return None
@@ -194,48 +201,44 @@ class CommandCog(commands.Cog):
     async def get_sub(self, context, sub: str):
         try:
             sub = await self.reddit.subreddit(sub, fetch=True)
-            sub = sub.display_name
+            return sub.display_name
         except asyncprawcore.exceptions.Redirect as error:
             if error.path == "/subreddits/search":
-                await self.errorEmbed(context, f"r/{sub} does not exist.")
-        if sub:
-            return sub
-        else:
-            await self.errorEmbed(context, f"Could not find r/{sub}")
+                await self.error_embed(context, f"r/{sub} does not exist.")
 
-    async def getSubFromChannel(self, context):
+    async def get_sub_from_channel(self, context):
         results = await self.sql.fetch(
             "SELECT name FROM subreddits WHERE channel_id=$1", context.channel.id
         )
-        results = parseSql(results)
+        results = parse_sql(results)
         if results:
             return results[0][0]
         else:
             return None
 
-    async def getAuthorizedUser(self, context):
+    async def get_authorized_user(self, context):
         results = await self.sql.fetch(
             "SELECT modlog_account FROM subreddits WHERE channel_id=$1", context.channel.id
         )
-        results = parseSql(results)
+        results = parse_sql(results)
         if results:
             return results[0][0]
         else:
             return None
 
-    async def getBotConfig(self, key):
+    async def get_bot_config(self, key):
         results = await self.sql.fetch("SELECT * FROM settings WHERE key=$1", key)
         if len(results) > 0:
             return json.loads(results[0][1])["value"]
         else:
             return None
 
-    async def getModeratedSubreddits(self, context, user=None):
+    async def get_moderated_subreddits(self, context, user=None):
         subreddits = []
         try:
             if not user:
                 currentUser = await self.reddit.user.me()
-                results = parseSql(
+                results = parse_sql(
                     await self.sql.fetch(
                         "SELECT redditor FROM modlogusers WHERE enabled"
                     )
@@ -265,14 +268,14 @@ class CommandCog(commands.Cog):
                 subs = await self.reddit.get(f"user/{user}/moderated_subreddits.json")
                 return subs
         except KeyError:
-            await self.errorEmbed(
+            await self.error_embed(
                 context,
                 f"[u/{user}](https://reddit.com/u/{user}) does not moderate any subreddits",
             )
 
-    async def userAuthedCheck(self, context):
+    async def user_authed_check(self, context):
         bypassRole = discord.utils.get(context.guild.roles, id=594708941582368769)
-        redditor = await self.getUser(context, context.author)
+        redditor = await self.get_user(context, context.author)
         if context.author in bypassRole.members:
             return redditor, True
         else:
@@ -286,44 +289,39 @@ class CommandCog(commands.Cog):
                 if user:
                     return redditor, False
                 else:
-                    await self.errorEmbed(
+                    await self.error_embed(
                         context,
                         "You need to auth your reddit account before you can use this command.\nUse this link to auth: ",
                     )
                     return redditor, None
             else:
-                await self.errorEmbed(
+                await self.error_embed(
                     context,
                     "You need to auth your reddit account before you can use this command. Use this link to auth:",
                 )
                 return None, None
 
-    async def getUser(self, context=None, member=None):
+    async def get_user(self, context=None, member=None):
         if not member:
             if context:
                 member = context.author
         user = None
-        if member:
-            member = member or (context.message.author if context else None)
-            authorID = member.id
-            encodedAuthor = hashlib.sha256(str(authorID).encode("utf-8")).hexdigest()
+        if isinstance(member, (discord.Member, discord.User)):
+            member_id = member.id
+        elif isinstance(member, int):
+            member_id = member
+        else:
+            member_id = None
+        if member_id:
             try:
-                results = parseSql(
-                    await self.sql.fetch(
-                        "SELECT * FROM verified WHERE encoded_id=$1", encodedAuthor
-                    )
-                )
-                if results:
-                    if results[0].redditor:
-                        redditor = self.reddit.redditor(results[0].redditor)
-                        await redditor._fetch()
-                        user = redditor.name
-            except Exception as error:
-                print(error)
+                verification = self.bot.credmgr.userVerification(str(member_id))
+                if verification:
+                    user = verification.redditor
+            except credmgr.exceptions.NotFound:
                 pass
         return user
 
-    async def promptOptions(
+    async def prompt_options(
         self,
         context,
         title,
@@ -355,7 +353,7 @@ class CommandCog(commands.Cog):
                         else:
                             self.toDelete.append(
                                 self.bot.loop.create_task(
-                                    self.errorEmbed(
+                                    self.error_embed(
                                         context,
                                         f"{option} isn't a number or is invalid.",
                                     )
@@ -366,7 +364,7 @@ class CommandCog(commands.Cog):
                     if " " in content:
                         self.toDelete.append(
                             self.bot.loop.create_task(
-                                self.errorEmbed(context, "Please choose one option")
+                                self.error_embed(context, "Please choose one option")
                             )
                         )
                     else:
@@ -375,7 +373,7 @@ class CommandCog(commands.Cog):
                         else:
                             self.toDelete.append(
                                 self.bot.loop.create_task(
-                                    self.errorEmbed(
+                                    self.error_embed(
                                         context,
                                         f"{content} isn't a number or is invalid.",
                                     )

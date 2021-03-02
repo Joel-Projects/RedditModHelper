@@ -6,12 +6,12 @@ import os
 import string
 import sys
 import time
-import dateutil
 import unicodedata
 from collections import Counter
 from typing import Union
 
 import dateparser as dateparser
+import dateutil
 import discord
 from discord import Embed
 from discord.ext import commands, menus
@@ -19,7 +19,7 @@ from discord.ext import commands, menus
 from .utils import checks, formats
 from .utils import time
 from .utils import time as utime
-from .utils.commandCog import CommandCog
+from .utils.command_cog import CommandCog
 from .utils.commands import command, group
 from .utils.paginator import RoboPages
 from .utils.utils import ordinal
@@ -359,15 +359,15 @@ class Meta(CommandCog):
                 o.write(n.read())
         with open("command_tests.json", "w") as f:
             json.dump(commands, f, indent=4)
-        await self.successEmbed(context, "Wrote command test template successfully")
+        await self.success_embed(context, "Wrote command test template successfully")
 
     @command(aliases=["rc"])
     async def runningcommands(self, context):
-        tasks = copy.copy(self.bot.runningTasks)
+        tasks = copy.copy(self.bot.running_tasks)
         is_admin = await checks.check_guild_permissions(
             context, {"administrator": True}
         )
-        runningTasks = {}
+        running_tasks = {}
         if is_admin:
             embed = Embed(title="Running Commands", color=discord.Color.purple())
             i = 0
@@ -380,9 +380,9 @@ class Meta(CommandCog):
                         strings.append(f"{i}. {task[1]}")
                     else:
                         try:
-                            self.bot.runningTasks[user].pop(task)
-                            if len(self.bot.runningTasks[user]) == 0:
-                                self.bot.runningTasks.pop(user)
+                            self.bot.running_tasks[user].pop(task)
+                            if len(self.bot.running_tasks[user]) == 0:
+                                self.bot.running_tasks.pop(user)
                         except ValueError:
                             pass
                 i = 0
@@ -392,10 +392,10 @@ class Meta(CommandCog):
             embed = Embed(title="Your Running Commands", color=discord.Color.purple())
             strings = []
             for i, task in enumerate(
-                self.bot.runningTasks[context.author.id].items(), 1
+                self.bot.running_tasks[context.author.id].items(), 1
             ):
                 strings.append(f"{i}. {task[1]}")
-                runningTasks[i] = task[0]
+                running_tasks[i] = task[0]
             valueString = "\n".join(strings)
             embed.add_field(name="Commands", value=valueString)
         embed.set_footer(
@@ -405,11 +405,11 @@ class Meta(CommandCog):
 
     @command(aliases=["c"])
     async def cancel(self, context, *commands):
-        tasks = copy.copy(self.bot.runningTasks)
+        tasks = copy.copy(self.bot.running_tasks)
         is_admin = await checks.check_guild_permissions(
             context, {"administrator": True}
         )
-        runningTasks = {}
+        running_tasks = {}
         strings = {}
         i = 0
         description = "Please list the numbers for the commands you want to cancel"
@@ -426,7 +426,7 @@ class Meta(CommandCog):
                 description=description,
             )
 
-        for user, userTasks in self.bot.runningTasks.items():
+        for user, userTasks in self.bot.running_tasks.items():
             if is_admin or user == context.author.id:
                 if is_admin:
                     username = discord.utils.get(context.guild.members, id=user)
@@ -441,7 +441,7 @@ class Meta(CommandCog):
                         if not username in strings:
                             strings[username] = []
                         strings[username].append(f"{i}. {task[1]}")
-                        runningTasks[i - 1] = task[0]
+                        running_tasks[i - 1] = task[0]
                     else:
                         try:
                             tasks[user].pop(task[0])
@@ -465,32 +465,26 @@ class Meta(CommandCog):
                     "Are you sure you want to cancel the above commands?"
                 )
                 if confirm:
-                    for task in runningTasks.values():
+                    for task in running_tasks.values():
                         try:
                             task.cancel()
                         except Exception as error:
-                            await self.errorEmbed(context, error)
+                            await self.error_embed(context, error)
                             return
         else:
-            toCancel = await self.promptOptions(
-                context,
-                "Please select which command(s) to cancel",
-                "List the number of the command(s) separated with spaces",
-                embed.fields,
-                "fields",
-                multiSelect=True,
-            )
+            toCancel = await self.prompt_options(context, "Please select which command(s) to cancel", "List the number of the command(s) separated with spaces", embed.fields,
+                "fields", multiSelect=True)
             if toCancel:
                 for command in toCancel:
-                    task = runningTasks[command]
+                    task = running_tasks[command]
                     try:
                         task.cancel()
                     except Exception as error:
-                        await self.errorEmbed(context, error)
+                        await self.error_embed(context, error)
                         return
             else:
                 return
-        await self.successEmbed(context, "Command(s) cancelled successfully")
+        await self.success_embed(context, "Command(s) cancelled successfully")
 
     @command()
     async def charinfo(self, context, *, characters: str):

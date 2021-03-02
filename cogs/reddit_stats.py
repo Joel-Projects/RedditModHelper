@@ -1,10 +1,10 @@
 """Commands for getting various Reddit Moderation statistics"""
+import datetime as dt
 import hashlib
 import io
 import os
 import re
 import textwrap
-import datetime as dt
 import time
 from asyncio import CancelledError
 from datetime import datetime
@@ -23,10 +23,10 @@ import urllib3
 from discord import Embed
 
 from .utils import db
-from .utils.commandCog import CommandCog
+from .utils.command_cog import CommandCog
 from .utils.commands import command
 from .utils.context import Context
-from .utils.utils import genDateString, ordinal, parseSql
+from .utils.utils import genDateString, ordinal, parse_sql
 
 
 def parseDate(date: str = None):
@@ -45,6 +45,7 @@ def parseDate(date: str = None):
 
 class Subreddits(db.Table, table_name="subreddits"):
     name = db.Column(db.String, primary_key=True, unique=True, nullable=False)
+    mod_role = db.Column(db.Integer(big=True), nullable=False)
     channel_id = db.Column(db.Integer(big=True), nullable=False)
     modlog_account = db.Column(db.String, nullable=False)
     alert_channel_id = db.Column(db.Integer(big=True))
@@ -88,7 +89,7 @@ class RedditStats(CommandCog):
 
         kwargs = await self.parseKwargs(args, context)
 
-        self.bot.startTask(context, self.getModlog(context, **kwargs))
+        self.bot.start_task(context, self.getModlog(context, **kwargs))
 
     @command(aliases=['mx'])
     async def matrix(self, context: Context, *args, startDate: str = None, endDate: str = None):
@@ -151,12 +152,12 @@ class RedditStats(CommandCog):
         if subreddit:
             try:
                 sub = await self.reddit.subreddit(subreddit)
-                self.bot.startTask(context, self.genMatrix(context, sub, startDate, endDate))
+                self.bot.start_task(context, self.genMatrix(context, sub, startDate, endDate))
             except asyncprawcore.exceptions.NotFound:
-                await self.errorEmbed(context, f'r/pics was not found.')
+                await self.error_embed(context, f'r/pics was not found.')
                 return
         else:
-            await self.errorEmbed(context, 'This command can only be used in a sub channel.')
+            await self.error_embed(context, 'This command can only be used in a sub channel.')
             return
 
     @command(aliases=['tbmx'])
@@ -229,12 +230,12 @@ class RedditStats(CommandCog):
             if subreddit:
                 try:
                     sub = await self.reddit.subreddit(subreddit)
-                    self.bot.startTask(context, self.genMatrix(context, sub, startDate, endDate, tb=True))
+                    self.bot.start_task(context, self.genMatrix(context, sub, startDate, endDate, tb=True))
                 except asyncprawcore.exceptions.NotFound:
-                    await self.errorEmbed(context, f'r/pics was not found.')
+                    await self.error_embed(context, f'r/pics was not found.')
                     return
             else:
-                await self.errorEmbed(context, 'Please use this command in a sub channel or specify sub.')
+                await self.error_embed(context, 'Please use this command in a sub channel or specify sub.')
                 return
 
     @command(aliases=['ms'])
@@ -257,7 +258,7 @@ class RedditStats(CommandCog):
                     try:
                         redditor = await self.reddit.redditor(user)
                     except asyncprawcore.NotFound:
-                        await self.errorEmbed(context, f'Could not find [u/{user}](https://reddit.com/u/{user}). Either the account has been deleted or it does not exist.')
+                        await self.error_embed(context, f'Could not find [u/{user}](https://reddit.com/u/{user}). Either the account has been deleted or it does not exist.')
                         return
                     else:
                         await self.calculateAndSend(msg1, redditor.name, context)
@@ -268,7 +269,7 @@ class RedditStats(CommandCog):
                 if redditor:
                     await self.calculateAndSend(msg1, redditor, context)
                 else:
-                    await self.errorEmbed(context, "Please use `.modstats <user>` or verify your Reddit account with `.verify`.")
+                    await self.error_embed(context, "Please use `.modstats <user>` or verify your Reddit account with `.verify`.")
                     return
 
     @command()
@@ -293,7 +294,7 @@ class RedditStats(CommandCog):
                 if subreddit:
                     await self.parseTraffic(subreddit, context)
                 else:
-                    await self.errorEmbed(context, 'Please use this command in a sub channel or specify sub.')
+                    await self.error_embed(context, 'Please use this command in a sub channel or specify sub.')
 
     @command(aliases=['lma'])
     async def lastmodaction(self, context, *moderators):
@@ -314,21 +315,21 @@ class RedditStats(CommandCog):
                 author = context.message.author
                 userID = author.id
                 encodedAuthor = hashlib.sha256(str(userID).encode('utf-8')).hexdigest()
-                results = parseSql(await self.sql.fetch('SELECT * FROM verified WHERE id=$1', encodedAuthor))
+                results = parse_sql(await self.sql.fetch('SELECT * FROM verified WHERE id=$1', encodedAuthor))
                 if results:
                     moderators = [results[0].redditor]
                 else:
-                    await self.errorEmbed(context, "Please a moderator or verify your Reddit account with `.verify`.")
+                    await self.error_embed(context, "Please a moderator or verify your Reddit account with `.verify`.")
             for moderator in moderators:
                 mod = await self.getmod(context, moderator)
                 if mod:
-                    results = parseSql(await self.sql.fetch('SELECT * FROM mirror.modlog WHERE moderator=$1 ORDER BY created_utc DESC LIMIT 1', mod))
+                    results = parse_sql(await self.sql.fetch('SELECT * FROM mirror.modlog WHERE moderator=$1 ORDER BY created_utc DESC LIMIT 1', mod))
                     if results:
                         lastAction = results[0]
                         embed = self.genActionEmbed(lastAction)
                         await context.send(embed=embed)
                     else:
-                        await self.errorEmbed(context, f'Could not find any action performed by [u/{mod}](https://reddit.com/user/{mod})')
+                        await self.error_embed(context, f'Could not find any action performed by [u/{mod}](https://reddit.com/user/{mod})')
 
     async def parseLmaKwargs(self, context, args):
         """
@@ -363,7 +364,7 @@ class RedditStats(CommandCog):
                 kwargs[kwargMapping[kwarg]] = ''.join(splitArg)
             else:
                 # print(f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...")
-                await self.errorEmbed(context, f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...")
+                await self.error_embed(context, f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...")
         return kwargs
 
     async def parseTraffic(self, subreddit, context):
@@ -399,7 +400,7 @@ class RedditStats(CommandCog):
                 for file in files:
                     os.remove(file.fp)
             else:
-                await self.errorEmbed(context, f"You don't moderate r/pics")
+                await self.error_embed(context, f"You don't moderate r/pics")
 
     async def parseKwargs(self, args, context):
         kwargs = {}
@@ -416,11 +417,11 @@ class RedditStats(CommandCog):
                     if splitArg[0] in actionMapping:
                         kwargs[kwargMapping[kwarg]] = ''.join(splitArg)
                     else:
-                        await self.errorEmbed(context, f'{splitArg} is not a valid action. Do `.validactions` to see valid actions.\nSkipping...')
+                        await self.error_embed(context, f'{splitArg} is not a valid action. Do `.validactions` to see valid actions.\nSkipping...')
                 else:
                     kwargs[kwargMapping[kwarg]] = ''.join(splitArg)
             else:
-                await self.errorEmbed(context, f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...")
+                await self.error_embed(context, f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...")
         return kwargs
 
     async def checkUrl(self, context, url: str):
@@ -438,7 +439,7 @@ class RedditStats(CommandCog):
                 redditor = await reddit.redditor(user)
                 return redditor
             except asyncprawcore.NotFound:
-                await self.errorEmbed(context, f'Could not find u/{user}')
+                await self.error_embed(context, f'Could not find u/{user}')
         else:
             urlRegex = r'https?:\/\/(((www\.|old\.|new\.)?reddit\.com)|redd\.it)\/'
             match = re.search(urlRegex, url, re.MULTILINE)
@@ -453,11 +454,11 @@ class RedditStats(CommandCog):
                     except Exception as error:
                         self.log.error(error)
                         self.log.info(error)
-                        await self.errorEmbed(context, "Hmm..that url didn't work")
+                        await self.error_embed(context, "Hmm..that url didn't work")
                 except Exception as error:
                     self.log.error(error)
                     self.log.info(error)
-                    await self.errorEmbed(context, "Hmm..that url didn't work")
+                    await self.error_embed(context, "Hmm..that url didn't work")
 
     async def generateCSV(self, context, sql, filename, timezonestr, args):
         """
@@ -482,13 +483,13 @@ class RedditStats(CommandCog):
             if len(rows) > 0:
                 self.log.info('Sending File')
                 sheetManager = SpreadsheetManager()
-                results = parseSql(await self.sql.fetch('SELECT email FROM sioux.spreadsheet_users'))
+                results = parse_sql(await self.sql.fetch('SELECT email FROM sioux.spreadsheet_users'))
                 emails = [i.email for i in results]
                 return sheetManager.processAndUpload(filename, csvheader, rows, 'ModLogs', emails)
             else:
-                await self.errorEmbed(context, 'No logs found')
+                await self.error_embed(context, 'No logs found')
         except pytz.exceptions.UnknownTimeZoneError:
-            await self.errorEmbed(context, f"{timezonestr} isn't a valid timezone")
+            await self.error_embed(context, f"{timezonestr} isn't a valid timezone")
 
     async def getModlog(self, context, url: str = None, mod: str = None, user: str = None, sub=None, limit: int = None, timezone: str = 'Eastern', action=None):
         """
@@ -528,7 +529,7 @@ class RedditStats(CommandCog):
                         if limit:
                             limit = int(limit)
                     except:
-                        await self.errorEmbed(context, 'Limit must be a whole number, skipping limit')
+                        await self.error_embed(context, 'Limit must be a whole number, skipping limit')
                     if user or url or mod or sub or action:
                         if user:
                             userRegex = r'https?:\/\/(www\.|old\.|new\.)?reddit\.com\/(user|u)/.*?$'
@@ -568,7 +569,7 @@ class RedditStats(CommandCog):
                         link = await self.generateCSV(context, sqlStatement, filename, timezone, tuple(values))
                         await context.send(f'Hey {context.author.mention}, got your requested modlogs logs. You can view it here: {link}')
                     else:
-                        await self.errorEmbed(context, 'Please include at least one of the following:```url, mod, user, limit, action, or sub```or run this command in a sub specific channel')
+                        await self.error_embed(context, 'Please include at least one of the following:```url, mod, user, limit, action, or sub```or run this command in a sub specific channel')
         except CancelledError:
             pass
 
@@ -584,7 +585,7 @@ class RedditStats(CommandCog):
                     startDate = await self.checkDate(context, startingDate, currentMonth=True)
                     endDate = await self.checkDate(context, endingDate, today=True)
                     if endDate < startDate:
-                        await self.errorEmbed(context, 'Start date must be before end date')
+                        await self.error_embed(context, 'Start date must be before end date')
                         return
                     data = (subreddit.display_name, startDate, endDate)
                     embed.add_field(name='Starting Date', value=startDate.strftime(f'%B {ordinal(startDate.day)}, %Y'))
@@ -643,7 +644,7 @@ class RedditStats(CommandCog):
                         query = await asyncpg.utils._mogrify(sql, "SELECT moderator, mod_action FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;", data)
                         self.log.debug(query)
                         results = await sql.fetch("SELECT moderator, mod_action, target_type FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;", *data, timeout=10000)
-                        results = parseSql(results)
+                        results = parse_sql(results)
                     action_types = set()
                     action_types = self._simply_mod_actions(action_types, results)
                     mods = {result.moderator: {action: 0 for action in action_types} for result in results}
@@ -696,13 +697,13 @@ class RedditStats(CommandCog):
                 if 1 <= date <= 12:
                     parsedDate = parseDate(date)
                 else:
-                    await self.errorEmbed(context, f'{date} is not a valid date, please use a number between 1 and 12 or a valid date')
+                    await self.error_embed(context, f'{date} is not a valid date, please use a number between 1 and 12 or a valid date')
                     self.checkDateErrored = True
                     return
             else:
                 parsedDate = parseDate(date)
                 if not parsedDate:
-                    await self.errorEmbed(context, f'{date} is not a valid date, please use a number between 1 and 12 or a valid date')
+                    await self.error_embed(context, f'{date} is not a valid date, please use a number between 1 and 12 or a valid date')
                     self.checkDateErrored = True
                     return
         else:
@@ -737,7 +738,7 @@ class RedditStats(CommandCog):
         embed = self.genEmbed(user, subCount, subscribers, subAverage, remaining, zeroCount)
         valueString = '\n'.join([f'{subRank}. {subreddit[0]}: {subreddit[1]:,}' for subRank, subreddit in enumerate(subreddits[:20], 1)])
         embed.add_field(name='Top 20 Subreddits', value=valueString, inline=False)
-        results = parseSql(await self.sql.fetch('SELECT * FROM moderators WHERE redditor ilike $1', user))
+        results = parse_sql(await self.sql.fetch('SELECT * FROM moderators WHERE redditor ilike $1', user))
         if results:
             redditor = results[0]
             user = redditor.redditor

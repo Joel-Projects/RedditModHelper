@@ -1,5 +1,13 @@
+import asyncio
 import time
+from functools import wraps
+from inspect import getfullargspec
 from typing import NamedTuple
+
+import asyncpraw
+import asyncprawcore as asyncprawcore
+
+
 
 
 def genDateString(
@@ -20,7 +28,7 @@ def ordinal(num):
     return str(num) + suffix
 
 
-def parseSql(results):
+def parse_sql(results):
     if len(results) > 0:
         Result = NamedTuple(
             "Result",
@@ -38,3 +46,34 @@ def parseSql(results):
         return None
 
 
+def resolve_sub(argument_name):
+    def decorator(f):
+        argspec = getfullargspec(f)
+        argument_index = argspec.args.index(argument_name)
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            try:
+                value = args[argument_index]
+                asyncio.get_event_loop().run_in_executor(get_sub(context))
+                return f(*args, **kwargs)
+            except Exception as error:
+                from bot import log
+
+                log.exception(error)
+        return wrapper
+    return decorator
+# def resolve_sub(f):
+#     @wraps(f)
+#     def decorator(*args, **kwargs):
+#         args_pec = getfullargspec(f)
+#         context = args[args_pec.args.index('context')]
+#         argument_index = args_pec.args.index('subreddit')
+#         try:
+#             value = args[argument_index]
+#             asyncio.get_event_loop().run_in_executor(get_sub(context))
+#             return f(*args, **kwargs)
+#         except Exception as error:
+#             from bot import log
+#             log.exception(error)
+
+    # return decorator
