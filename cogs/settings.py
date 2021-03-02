@@ -99,9 +99,9 @@ class Settings(CommandCog):
             embed = Embed(title="Get Bot Config")
             for setting in args:
                 if setting == "all":
-                    results = await self.sqlselect(context)
+                    results = await self.sql_select(context)
                 else:
-                    results = await self.sqlselect(context, setting)
+                    results = await self.sql_select(context, setting)
                 results = [
                     (key.get("key"), json.loads(key.get("value")))
                     for key in [result for result in results]
@@ -362,7 +362,7 @@ class Settings(CommandCog):
             embed = Embed(title="Delete Bot Setting")
             for setting in args:
                 if setting == "all":
-                    results = await self.sqlselect(context)
+                    results = await self.sql_select(context)
                     results = [
                         (key.get("key"), json.loads(key.get("value")))
                         for key in [result for result in results]
@@ -397,7 +397,7 @@ class Settings(CommandCog):
                     else:
                         canceled = True
                 else:
-                    results = await self.sqlselect(context, setting)
+                    results = await self.sql_select(context, setting)
                     results = [
                         (key.get("key"), json.loads(key.get("value")))
                         for key in [result for result in results]
