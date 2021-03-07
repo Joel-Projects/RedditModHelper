@@ -633,12 +633,12 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                     for attr in ["link_message_id", "welcome_message_id"]
                     if getattr(result, attr)
                 ]
-                for message in messages_to_delete:
-                    try:
+                try:
+                    await context.message.delete()
+                    for message in messages_to_delete:
                         await message.delete()
-                    except Exception:
-                        pass
-                await context.message.delete()
+                except Exception:
+                    pass
                 await self.success_embed(
                     context,
                     f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
@@ -657,7 +657,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     async def update_perms(self, user):
         await user.add_roles(self.verified_role)
-        await user.remove_roles(self.unverified_role)
+        await user.remove_roles(self.unverified_role, self.grandfather_role)
         redditor = await self.reddit.redditor(await self.get_redditor(None, user))
         moderated_subreddits = await redditor.moderated()
         results = parse_sql(
