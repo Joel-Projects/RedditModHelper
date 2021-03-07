@@ -132,20 +132,19 @@ class RedditModHelper(commands.AutoShardedBot):
         elif isinstance(error, commands.CheckFailure):
             await CommandCog.error_embed(context, "You're not allowed to do that!")
         elif isinstance(error, commands.CommandInvokeError):
-            traceback.print_tb(error.original.__traceback__)
-            if not self.debug:
-                log.error(
-                    f"In {context.command.qualified_name}:\n{error.original.__class__.__name__}: {error.original}"
-                )
-            else:
-                print(f"In {context.command.qualified_name}:")
-                print(f"{error.original.__class__.__name__}: {error.original}")
-        elif isinstance(error, (commands.ArgumentParsingError, commands.MissingRequiredArgument)):
+            self.log_error(context, error)
+        elif isinstance(
+            error, (commands.ArgumentParsingError, commands.MissingRequiredArgument)
+        ):
             await context.send(error)
         elif isinstance(error, commands.MissingRequiredArgument):
             await context.send_help(context.command)
             await context.send(error)
         else:
+            self.log_error(context, error)
+
+    def log_error(self, context, error):
+        try:
             traceback.print_tb(error.original.__traceback__)
             if not self.debug:
                 log.error(
@@ -154,6 +153,15 @@ class RedditModHelper(commands.AutoShardedBot):
             else:
                 print(f"In {context.command.qualified_name}:")
                 print(f"{error.original.__class__.__name__}: {error.original}")
+        except AttributeError:
+            traceback.print_tb(error.__traceback__)
+            if not self.debug:
+                log.error(
+                    f"In {context.command.qualified_name}:\n{error.__class__.__name__}: {error}"
+                )
+            else:
+                print(f"In {context.command.qualified_name}:")
+                print(f"{error.__class__.__name__}: {error}")
 
     def get_guild_prefixes(self, guild, *, local_inject=_prefix_callable):
         proxy_msg = discord.Object(id=0)
@@ -216,7 +224,9 @@ class RedditModHelper(commands.AutoShardedBot):
             The member or None if not found.
         """
 
-        member = guild.get_member(member_id)
+        member = guild.get_member(
+            member_id,
+        )
         if member is not None:
             return member
 
@@ -258,7 +268,9 @@ class RedditModHelper(commands.AutoShardedBot):
 
         needs_resolution = []
         for member_id in member_ids:
-            member = guild.get_member(member_id)
+            member = guild.get_member(
+                member_id,
+            )
             if member is not None:
                 yield member
             else:
@@ -316,7 +328,9 @@ class RedditModHelper(commands.AutoShardedBot):
 
         def __enter__(self):
             log.debug(f"Switching to u/{self.user}")
-            return self.bot.services.reddit(self.user, loop=self.bot.loop)
+            return asyncpraw.Reddit(
+                **self.bot.services.reddit(self.user).config._settings
+            )
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             log.debug("Switching back to u/Lil_SpazJoekp")
@@ -341,6 +355,10 @@ class RedditModHelper(commands.AutoShardedBot):
             return
         if context.guild is not None and context.guild.id in self.blacklist:
             return
+        if context.guild.id != 785198941535731715:
+            if not self.debug:
+                if context.author.id != self.owner_id:
+                    return
 
         await self.invoke(context)
         if len(self.running_tasks.keys()) > 0:
@@ -357,6 +375,8 @@ class RedditModHelper(commands.AutoShardedBot):
 
     async def on_message(self, message):
         if message.author.bot:
+            return
+        if self.debug and message.author.id != self.owner_id:
             return
         await self.process_commands(message)
 

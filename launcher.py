@@ -14,7 +14,7 @@ import config
 from bot import RedditModHelper, initial_extensions, log, services
 from cogs.utils.db import Table
 
-if sys.platform != 'darwin':
+if sys.platform != "darwin":
     try:
         import uvloop
     except ImportError:
@@ -59,9 +59,10 @@ def setup_logging():
 
 def run_bot():
     loop = asyncio.get_event_loop()
-    if sys.platform == 'darwin':
+    if sys.platform == "darwin":
         try:
             import nest_asyncio
+
             nest_asyncio.apply(loop)
         except ImportError:
             pass
@@ -292,6 +293,7 @@ def drop(cog, quiet):
         return
 
     run(remove_databases(pool, cog, quiet))
+
 
 if __name__ == "__main__":
     try:

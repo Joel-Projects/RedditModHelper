@@ -24,7 +24,7 @@ from .utils.context import Context
 
 log = logging.getLogger(__name__)
 
-LOGGING_CHANNEL = 644020423679410196
+LOGGING_CHANNEL = 817835810593439784
 
 
 class GatewayHandler(logging.Handler):
@@ -99,7 +99,7 @@ class Stats(CommandCog):
             await self.bot.pool.execute(query, self._data_batch)
             total = len(self._data_batch)
             if total > 1:
-                self.log.info("Registered {total} commands to the database.", total)
+                self.log.info(f"Registered {total} commands to the database.")
             self._data_batch.clear()
 
     def cog_unload(self):
@@ -684,8 +684,7 @@ class Stats(CommandCog):
 
         fmt = f"Channel: {context.channel} (ID: {context.channel.id})"
         if context.guild:
-            fmt = f"{fmt}\nGuild: {context.guild} (ID: {context.guild.id})"
-
+            fmt = f"{fmt}\nGuild: {context.guild} (ID: {context.guild.id})\n[Invoke Message]({context.message.jump_url})"
         embed.add_field(name="Location", value=fmt, inline=False)
         embed.add_field(
             name="Content", value=textwrap.shorten(context.message.content, width=512)

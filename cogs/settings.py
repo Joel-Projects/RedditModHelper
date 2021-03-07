@@ -5,7 +5,8 @@ import re
 import discord
 from discord import Embed
 from discord.ext import commands
-from discord.ext.commands import MemberConverter, RoleConverter, TextChannelConverter
+from discord.ext.commands import (MemberConverter, RoleConverter,
+                                  TextChannelConverter)
 
 from .utils import db
 from .utils.command_cog import CommandCog
@@ -24,7 +25,6 @@ class Settings(CommandCog):
 
     async def cog_check(self, context):
         return await self.bot.is_owner(context.author)
-
 
     async def getType(self, context, value):
         converter = None
@@ -155,9 +155,7 @@ class Settings(CommandCog):
                     key = setting[0]
                     configValue = await self.getType(context, setting[1])
                     if setting[1] == "all":
-                        await self.error_embed(
-                            context, "Setting: `all` is not valid"
-                        )
+                        await self.error_embed(context, "Setting: `all` is not valid")
                         return
                     else:
                         toBeCommitted[key] = configValue

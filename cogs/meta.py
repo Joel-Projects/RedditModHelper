@@ -238,10 +238,10 @@ class PaginatedHelpCommand(commands.HelpCommand):
         :return datetime.datetime: datetime object
         """
         settings = dateparser.conf.Settings()
-        settings.PREFER_DAY_OF_MONTH = 'first'
+        settings.PREFER_DAY_OF_MONTH = "first"
         settings.RETURN_AS_TIMEZONE_AWARE = True
-        settings.TIMEZONE = 'UTC'
-        settings.PREFER_DATES_FROM = 'past'
+        settings.TIMEZONE = "UTC"
+        settings.PREFER_DATES_FROM = "past"
         try:
             parsedDate = dateparser.parse(date)
             return parsedDate
@@ -257,28 +257,53 @@ class PaginatedHelpCommand(commands.HelpCommand):
                 parsedDate = self.parseDate(date)
         else:
             if today:
-                parsedDate = self.parseDate(time.strftime('%m/%d/%Y %I:%M:%S %p', time.localtime()))
+                parsedDate = self.parseDate(
+                    time.strftime("%m/%d/%Y %I:%M:%S %p", time.localtime())
+                )
             else:
                 if lastMonth:
                     months = 1
                 if currentMonth:
                     months = 0
-                parsedDate = self.parseDate(time.strftime('%m', time.gmtime(datetime.timestamp(datetime.today() - dateutil.relativedelta.relativedelta(months=months)))))
+                parsedDate = self.parseDate(
+                    time.strftime(
+                        "%m",
+                        time.gmtime(
+                            datetime.timestamp(
+                                datetime.today()
+                                - dateutil.relativedelta.relativedelta(months=months)
+                            )
+                        ),
+                    )
+                )
         return parsedDate
 
     def getDateStr(self, dateStr, **kwargs):
         date = self.checkDate(dateStr, **kwargs)
-        return date.strftime(f'%b {ordinal(date.day)}, %Y at %I:%M %p')
+        return date.strftime(f"%b {ordinal(date.day)}, %Y at %I:%M %p")
 
     def common_command_formatting(self, page_or_embed, command):
         page_or_embed.title = self.get_command_signature(command)
         commandHelp = command.help
-        if command.name == 'matrix' or command.name == 'tbmatrix':
-            commandHelp = command.help.format(**{'none' if dateStr == 'none' else dateStr: self.getDateStr(None, currentMonth=True) if dateStr == 'none' else self.getDateStr(dateStr.replace('_', ' ')) for dateStr in [tup[1] for tup in string.Formatter().parse(command.help) if tup[1] is not None]})
+        if command.name == "matrix" or command.name == "tbmatrix":
+            commandHelp = command.help.format(
+                **{
+                    "none"
+                    if dateStr == "none"
+                    else dateStr: self.getDateStr(None, currentMonth=True)
+                    if dateStr == "none"
+                    else self.getDateStr(dateStr.replace("_", " "))
+                    for dateStr in [
+                        tup[1]
+                        for tup in string.Formatter().parse(command.help)
+                        if tup[1] is not None
+                    ]
+                }
+            )
         if command.description:
-            page_or_embed.description = f'{command.description}\n\n{commandHelp}'
+            page_or_embed.description = f"{command.description}\n\n{commandHelp}"
         else:
-            page_or_embed.description = commandHelp or 'No help found...'
+            page_or_embed.description = commandHelp or "No help found..."
 
     async def send_command_help(self, command):
         # No pagination necessary for a single command.
@@ -472,8 +497,14 @@ class Meta(CommandCog):
                             await self.error_embed(context, error)
                             return
         else:
-            toCancel = await self.prompt_options(context, "Please select which command(s) to cancel", "List the number of the command(s) separated with spaces", embed.fields,
-                "fields", multiSelect=True)
+            toCancel = await self.prompt_options(
+                context,
+                "Please select which command(s) to cancel",
+                "List the number of the command(s) separated with spaces",
+                embed.fields,
+                "fields",
+                multiSelect=True,
+            )
             if toCancel:
                 for command in toCancel:
                     task = running_tasks[command]
@@ -623,13 +654,24 @@ class Meta(CommandCog):
 
         user = user or context.author
         if context.guild and isinstance(user, discord.User):
-            user = context.guild.get_member(user.id) or user
+            user = (
+                context.guild.get_member(
+                    user.id,
+                )
+                or user
+            )
 
         embed = discord.Embed()
         roles = [
             role.name.replace("@", "@\u200b") for role in getattr(user, "roles", [])
         ]
-        shared = sum(guild.get_member(user.id) is not None for guild in self.bot.guilds)
+        shared = sum(
+            guild.get_member(
+                user.id,
+            )
+            is not None
+            for guild in self.bot.guilds
+        )
         embed.set_author(name=str(user))
 
         def format_date(dt):

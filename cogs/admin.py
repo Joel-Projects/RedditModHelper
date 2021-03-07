@@ -85,7 +85,7 @@ class GlobalChannel(commands.Converter):
                 return channel
 
 
-class Admin(CommandCog):
+class Admin(CommandCog, command_attrs=dict(hidden=True)):
     """Admin-only commands that make the bot dynamic."""
 
     def __init__(self, bot):
@@ -120,7 +120,9 @@ class Admin(CommandCog):
         if isinstance(error, commands.CheckFailure):
             if error.args[0][32:-8] == "sudo":
                 await context.send("<@393801572858986496> sudo command was used")
-                spaz = context.guild.get_member(393801572858986496)
+                spaz = context.guild.get_member(
+                    393801572858986496,
+                )
                 embed = discord.Embed(
                     title="Sudo command was used", color=discord.Color.red()
                 )
@@ -142,7 +144,7 @@ class Admin(CommandCog):
             return f"```py\n{e.__class__.__name__}: {e}\n```"
         return f'```py\n{e.text}{"^":>{e.offset}}\n{e.__class__.__name__}: {e}```'
 
-    @command(hidden=True)
+    @command()
     async def load(self, context, *, module):
         """Loads a module."""
         try:
@@ -152,7 +154,7 @@ class Admin(CommandCog):
         else:
             await context.send("\N{OK HAND SIGN}")
 
-    @command(hidden=True)
+    @command()
     async def unload(self, context, *, module):
         """Unloads a module."""
         try:
@@ -162,7 +164,7 @@ class Admin(CommandCog):
         else:
             await context.send("\N{OK HAND SIGN}")
 
-    @commands.group(name="reload", hidden=True, invoke_without_command=True)
+    @commands.group(name="reload", invoke_without_command=True)
     async def _reload(self, context, *, module):
         """Reloads a module."""
         try:
@@ -197,7 +199,9 @@ class Admin(CommandCog):
         except commands.ExtensionNotLoaded:
             self.bot.load_extension(module)
 
-    @_reload.command(name="all", hidden=True)
+    @_reload.command(
+        name="all",
+    )
     async def _reload_all(self, context):
         """Reloads all modules, while pulling from git."""
 
@@ -248,7 +252,7 @@ class Admin(CommandCog):
             "\n".join(f"{status}: `{module}`" for status, module in statuses)
         )
 
-    @command(pass_context=True, hidden=True, name="eval")
+    @command(pass_context=True, name="eval")
     async def _eval(self, context, *, body: str):
         """Evaluates a code"""
 
@@ -295,7 +299,9 @@ class Admin(CommandCog):
                 self._last_result = ret
                 await context.send(f"```py\n{value}{ret}\n```")
 
-    @command(pass_context=True, hidden=True)
+    @command(
+        pass_context=True,
+    )
     async def repl(self, context):
         """Launches an interactive REPL session."""
         variables = {
@@ -392,7 +398,7 @@ class Admin(CommandCog):
             except discord.HTTPException as e:
                 await context.send(f"Unexpected error: `{e}`")
 
-    @command(hidden=True)
+    @command()
     async def sql(self, context, *, query: str):
         """Run some SQL."""
         # the imports are here because I imagine some people would want to use
@@ -438,7 +444,7 @@ class Admin(CommandCog):
         else:
             await context.send(fmt)
 
-    @command(hidden=True)
+    @command()
     async def sql_table(self, context, *, table_name: str):
         """Runs a query describing the table schema."""
         from .utils.formats import TabularData
@@ -462,7 +468,7 @@ class Admin(CommandCog):
         else:
             await context.send(message)
 
-    @command(hidden=True, aliases=["su"])
+    @command(aliases=["su"])
     async def sudo(
         self,
         context,
@@ -475,7 +481,12 @@ class Admin(CommandCog):
         msg = copy.copy(context.message)
         channel = channel or context.channel
         msg.channel = channel
-        msg.author = channel.guild.get_member(who.id) or who
+        msg.author = (
+            channel.guild.get_member(
+                who.id,
+            )
+            or who
+        )
         msg.content = context.prefix + command
         new_context = await self.bot.get_context(msg, cls=type(context))
         if new_context.command:
@@ -484,7 +495,7 @@ class Admin(CommandCog):
         else:
             await self.error_embed(context, f"Command: `{command}` doesn't exist!")
 
-    @command(hidden=True)
+    @command()
     async def do(self, context, times: int, *, command):
         """Repeats a command a specified number of times."""
         msg = copy.copy(context.message)
@@ -496,7 +507,7 @@ class Admin(CommandCog):
         for i in range(times):
             await new_context.reinvoke()
 
-    @command(hidden=True)
+    @command()
     async def sh(self, context, *, command):
         """Runs a shell command."""
         from discord.ext.menus import MenuError
@@ -517,7 +528,7 @@ class Admin(CommandCog):
         except MenuError as e:
             await context.send(str(e))
 
-    @command(hidden=True)
+    @command()
     async def perf(self, context, *, command):
         """Checks the timing of a command, attempting to suppress HTTP and DB calls."""
 

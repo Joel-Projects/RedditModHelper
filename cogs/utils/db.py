@@ -31,6 +31,7 @@ DEALINGS IN THE SOFTWARE.
 import asyncio
 import datetime
 import decimal
+import enum
 import inspect
 import json
 import logging
@@ -128,6 +129,20 @@ class Float(SQLType):
 
     def to_sql(self):
         return "FLOAT"
+
+
+class ActionType(SQLType):
+    python = str
+
+    def to_sql(self):
+        return "ACTION_TYPE"
+
+
+class Status(SQLType):
+    python = str
+
+    def to_sql(self):
+        return "STATUS"
 
 
 class Integer(SQLType):

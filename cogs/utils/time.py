@@ -217,9 +217,8 @@ class UserFriendlyTime(commands.Converter):
 def human_timedelta(dt, *, source=None, accuracy=3, brief=False, suffix=True):
     now = source or datetime.datetime.utcnow()
     # Microsecond free zone
-    now = now.replace(microsecond=0)
-    dt = dt.replace(microsecond=0)
-
+    now = now.replace(microsecond=0).astimezone()
+    dt = dt.replace(microsecond=0).astimezone()
     # This implementation uses relativedelta instead of the much more obvious
     # divmod approach with seconds because the seconds approach is not entirely
     # accurate once you go over 1 week in terms of accuracy since you have to

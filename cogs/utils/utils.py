@@ -8,8 +8,6 @@ import asyncpraw
 import asyncprawcore as asyncprawcore
 
 
-
-
 def genDateString(
     epoch=time.time(), gmtime=False, format="%B %d, %Y at %I:%M:%S %p %Z"
 ):
@@ -50,6 +48,7 @@ def resolve_sub(argument_name):
     def decorator(f):
         argspec = getfullargspec(f)
         argument_index = argspec.args.index(argument_name)
+
         @wraps(f)
         def wrapper(*args, **kwargs):
             try:
@@ -60,8 +59,12 @@ def resolve_sub(argument_name):
                 from bot import log
 
                 log.exception(error)
+
         return wrapper
+
     return decorator
+
+
 # def resolve_sub(f):
 #     @wraps(f)
 #     def decorator(*args, **kwargs):
@@ -76,4 +79,4 @@ def resolve_sub(argument_name):
 #             from bot import log
 #             log.exception(error)
 
-    # return decorator
+# return decorator

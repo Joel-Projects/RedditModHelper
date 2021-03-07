@@ -69,9 +69,11 @@ class Context(commands.Context):
             return msg.author.id == self.author.id and self.channel == msg.channel
 
         try:
-            answer: discord.Message = await self.bot.wait_for("message", check=message_check, timeout=30.0)
+            answer: discord.Message = await self.bot.wait_for(
+                "message", check=message_check, timeout=30.0
+            )
             if answer:
-                if answer.content.lower() == '!c':
+                if answer.content.lower() == "!c":
                     raise asyncio.CancelledError
                 return answer.content
         except asyncio.TimeoutError:
