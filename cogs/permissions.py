@@ -56,10 +56,12 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     def __init__(self, bot):
         super().__init__(bot)
-        self.approval_channel: discord.TextChannel = None
-        self.dmz_channel: discord.TextChannel = None
         self.unverified_role: discord.Role = None
         self.verified_role: discord.Role = None
+        self.approved_role: discord.Role = None
+        self.dmz_channel: discord.TextChannel = None
+        self.approval_channel: discord.TextChannel = None
+        self.grandfather_role: discord.Role = None
         self.guild = self.bot.get_guild(785198941535731715)
 
     async def cog_before_invoke(self, context):
@@ -72,6 +74,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             "approved_role": await self.get_bot_config("approved_role"),
             "dmz_channel": await self.get_bot_config("dmz_channel"),
             "approval_channel": await self.get_bot_config("approval_channel"),
+            "grandfather_role": await self.get_bot_config("grandfather_role"),
         }
         getObject = lambda id: discord.utils.get(guild.roles + guild.channels, id=id)
         for key, value in objects.items():
@@ -225,7 +228,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         else:
             message = await self.success_embed(
                 self.dmz_channel,
-                f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before your are allowed to access the server.",
+                f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
             )
             welcome_message = await self.dmz_channel.send(
                 f"Welcome {member.mention}! You have already been verified, please wait for manual approval."
@@ -267,6 +270,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 self.log.error("This should not be possible")
 
     @command(hidden=True)
+    @checks.authorized_roles()
     async def _on_join(self, context, *members: discord.Member):
         for member in members:
             await member.add_roles(self.unverified_role)
@@ -309,7 +313,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             else:
                 message = await self.success_embed(
                     context,
-                    f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before your are allowed to access the server.",
+                    f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
                 )
                 welcome_message = await self.dmz_channel.send(
                     f"Welcome {member.mention}! You have already been verified, please wait for manual approval."
@@ -369,6 +373,28 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             return None
 
     @command()
+    async def assignunv(self, context):
+        for user in context.guild.members:
+            redditor = await self.get_redditor(context, user)
+            if self.approved_role not in user.roles:
+                if redditor:
+                    await user.add_roles(self.verified_role, self.approved_role)
+                    await user.remove_roles(self.grandfather_role, self.unverified_role)
+                    self.log.info(f'Added approved_role removed grandfather_role role to {user}')
+                else:
+                    await user.add_roles(self.unverified_role, self.grandfather_role)
+                    await user.remove_roles(self.approved_role, self.verified_role)
+                    self.log.info(f'Added grandfather_role role to {user}')
+            else:
+                if redditor:
+                    await user.add_roles(self.verified_role, self.approved_role)
+                    await user.remove_roles(self.unverified_role, self.grandfather_role)
+                else:
+                    await user.add_roles(self.unverified_role, self.grandfather_role)
+                self.log.info(f'{user} already approved')
+
+    @command()
+    @checks.authorized_roles()
     async def approve(self, context, *user_ids: UserIDConverter):
         """Approve a user to access this server.
 
@@ -393,6 +419,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 await self.action_user(context, user, "approve")
 
     @command()
+    @checks.authorized_roles()
     async def deny(self, context, *user_ids: UserIDConverter):
         """Deny a user to access this server.
 
@@ -417,6 +444,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 await self.action_user(context, user, "deny")
 
     @command()
+    @checks.authorized_roles()
     async def preapprove(self, context, *usernames: RedditorConverter):
         """Pre-approve a user to access this server.
 
@@ -442,6 +470,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         )
 
     @command()
+    @checks.authorized_roles()
     async def predeny(self, context, *usernames: RedditorConverter):
         """Pre-deny a user to access this server.
 
@@ -570,6 +599,9 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 user = context.author
         else:
             user = discord.utils.get(self.guild.members, id=context.author.id)
+        if self.grandfather_role in context.author.roles:
+            await self.action_user(context, user, "approve")
+            return
         redditor = await self.get_redditor(context, user)
         if redditor:
             # await self.check_pre_redditor(context, redditor)
@@ -596,7 +628,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                         pass
                 await self.success_embed(
                     context,
-                    f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before your are allowed to access the server.",
+                    f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
                 )
                 await self.send_approval_request(result.id, user, redditor)
             else:

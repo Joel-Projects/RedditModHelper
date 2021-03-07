@@ -96,3 +96,5 @@ def is_in_guilds(*guild_ids):
 def authorized_roles():
     async def predicate(context):
         roles = await context.cog.get_bot_config("authorized_roles")
+        return any([role.id in roles for role in context.author.roles])
+    return commands.check(predicate)
