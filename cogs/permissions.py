@@ -390,18 +390,20 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 if redditor:
                     await user.add_roles(self.verified_role, self.approved_role)
                     await user.remove_roles(self.grandfather_role, self.unverified_role)
-                    self.log.info(f'Added approved_role removed grandfather_role role to {user}')
+                    self.log.info(
+                        f"Added approved_role removed grandfather_role role to {user}"
+                    )
                 else:
                     await user.add_roles(self.unverified_role, self.grandfather_role)
                     await user.remove_roles(self.approved_role, self.verified_role)
-                    self.log.info(f'Added grandfather_role role to {user}')
+                    self.log.info(f"Added grandfather_role role to {user}")
             else:
                 if redditor:
                     await user.add_roles(self.verified_role, self.approved_role)
                     await user.remove_roles(self.unverified_role, self.grandfather_role)
                 else:
                     await user.add_roles(self.unverified_role, self.grandfather_role)
-                self.log.info(f'{user} already approved')
+                self.log.info(f"{user} already approved")
 
     @command()
     @checks.authorized_roles()
@@ -557,7 +559,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             )
             await member.send(embed=embed)
             await member.send(
-                f"Send `.done{' '+member.id if users else ''}` after you have verified your reddit account using the above link."
+                f"Send `.done{' '+str(member.id) if users else ''}` after you have verified your reddit account using the above link."
             )
 
     @command(aliases=["ump"])
@@ -668,7 +670,9 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 if result.name in moderated_subreddits
             ]
             for role in roles:
-                await user.add_roles(self.guild.get_role(role))
+                await user.add_roles(
+                    self.bot.get_guild(785198941535731715).get_role(role)
+                )
 
     async def check_pre_redditor(self, context, user):
         try:
