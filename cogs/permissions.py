@@ -373,8 +373,18 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             return None
 
     @command()
+    @checks.authorized_roles()
     async def assignunv(self, context):
         for user in context.guild.members:
+            try:
+                await Users.insert(
+                    user_id=user.id,
+                    username=user.name,
+                    created_at=user.created_at,
+                    joined_at=user.joined_at,
+                )
+            except UniqueViolationError:
+                pass
             redditor = await self.get_redditor(context, user)
             if self.approved_role not in user.roles:
                 if redditor:
