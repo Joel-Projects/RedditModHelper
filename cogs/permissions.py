@@ -559,7 +559,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             )
             await member.send(embed=embed)
             await member.send(
-                f"Send `.done{' '+str(member.id) if users else ''}` after you have verified your reddit account using the above link."
+                f"Send `.done` after you have verified your reddit account using the above link."
             )
 
     @command(aliases=["ump"])
@@ -603,10 +603,10 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 )
 
     @command(hidden=True)
-    async def done(self, context: Context, *userid: int):
+    async def done(self, context: Context, userid: int):
         if context.guild:
             if userid:
-                user = discord.utils.get(context.guild.members, id=userid[0])
+                user = discord.utils.get(context.guild.members, id=userid)
             else:
                 user = context.author
         else:
