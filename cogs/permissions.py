@@ -504,14 +504,14 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 await member.add_roles(self.approved_role)
                 await self.update_perms(member)
                 await self.success_embed(
-                    context, f"Successfully approved {member.mention}!"
+                    self.approval_channel, f"Successfully approved {member.mention}!"
                 )
             elif action == "deny":
                 await member.kick(
                     reason=f"Denied by {context.author.name}#{context.author.discriminator} ({context.author.id})"
                 )
                 await self.success_embed(
-                    context, f"Successfully denied and kicked {member.mention}!"
+                    self.approval_channel, f"Successfully denied and kicked {member.mention}!"
                 )
             await self.sql.execute(
                 "UPDATE users SET status=$1 WHERE user_id=$2",
