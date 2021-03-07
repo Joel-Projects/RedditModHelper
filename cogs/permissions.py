@@ -557,7 +557,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             )
             await member.send(embed=embed)
             await member.send(
-                f"Send `.done {member.id}` after you have verified your reddit account using the above link."
+                f"Send `.done{' '+member.id if users else ''}` after you have verified your reddit account using the above link."
             )
 
     @command(aliases=["ump"])
@@ -636,6 +636,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                         await message.delete()
                     except Exception:
                         pass
+                await context.message.delete()
                 await self.success_embed(
                     context,
                     f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
