@@ -603,10 +603,10 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 )
 
     @command(hidden=True)
-    async def done(self, context: Context, userid: int):
+    async def done(self, context: Context, *userid: int):
         if context.guild:
             if userid:
-                user = discord.utils.get(context.guild.members, id=userid)
+                user = discord.utils.get(context.guild.members, id=userid[0])
             else:
                 user = context.author
         else:
