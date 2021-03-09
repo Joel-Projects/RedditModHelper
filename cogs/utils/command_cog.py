@@ -4,7 +4,6 @@ import time
 import typing
 from typing import TYPE_CHECKING
 
-import asyncpraw
 import asyncprawcore
 import credmgr
 import discord

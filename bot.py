@@ -87,6 +87,7 @@ class RedditModHelper(commands.AutoShardedBot):
         self.sql: asyncpg.pool.Pool = self.pool
         self.log = log
         self.running_tasks = {}
+        self.snoo_guild = None
         # shard_id: List[datetime.datetime]
         # shows the last attempted IDENTIFYs and RESUMEs
         self.resumes = defaultdict(list)
@@ -319,6 +320,7 @@ class RedditModHelper(commands.AutoShardedBot):
         if not hasattr(self, "uptime"):
             self.uptime = datetime.datetime.utcnow()
         log.info(f"Ready: {self.user} (ID: {self.user.id})")
+        self.snoo_guild = self.get_guild(785198941535731715)
         self.print_servers.start()
 
     class switch_reddit_instance:
@@ -353,12 +355,13 @@ class RedditModHelper(commands.AutoShardedBot):
 
         if context.command is None:
             return
-        if context.guild is not None and context.guild.id in self.blacklist:
-            return
-        if context.guild.id != 785198941535731715:
-            if not self.debug:
-                if context.author.id != self.owner_id:
-                    return
+        if context.guild is not None:
+            if context.guild.id in self.blacklist:
+                return
+            if context.guild.id != 785198941535731715:
+                if not self.debug:
+                    if context.author.id != self.owner_id:
+                        return
 
         await self.invoke(context)
         if len(self.running_tasks.keys()) > 0:

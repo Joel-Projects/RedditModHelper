@@ -6,9 +6,7 @@ import logging
 import sys
 import traceback
 
-import asyncpg
 import click
-import discord
 
 import config
 from bot import RedditModHelper, initial_extensions, log, services

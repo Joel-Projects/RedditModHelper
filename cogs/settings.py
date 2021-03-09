@@ -5,7 +5,8 @@ import re
 import discord
 from discord import Embed
 from discord.ext import commands
-from discord.ext.commands import MemberConverter, RoleConverter, TextChannelConverter
+from discord.ext.commands import (MemberConverter, RoleConverter,
+                                  TextChannelConverter)
 
 from .utils import db
 from .utils.command_cog import CommandCog

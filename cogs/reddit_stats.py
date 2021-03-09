@@ -154,8 +154,8 @@ class RedditStats(CommandCog):
         If you are in a sub channel, the subreddit does not need to be specified.
         If you have any questions ask Spaz.
         """
-        subreddit = await self.getSubFromChannel(context)
-        authorized_user = await self.getAuthorizedUser(context)
+        subreddit = await self.get_sub_from_channel(context)
+        authorized_user = await self.get_authorized_user(context)
         if len(args) == 2:
             startDate, endDate = args[:2]
         elif len(args) == 1:
@@ -164,10 +164,10 @@ class RedditStats(CommandCog):
             try:
                 sub = await self.reddit.subreddit(subreddit)
                 self.bot.start_task(
-                    context, self.genMatrix(context, sub, startDate, endDate)
+                    context, self.gen_matrix(context, sub, startDate, endDate)
                 )
             except asyncprawcore.exceptions.NotFound:
-                await self.error_embed(context, f"r/pics was not found.")
+                await self.error_embed(context, f"r/{subreddit} was not found.")
                 return
         else:
             await self.error_embed(
@@ -235,7 +235,7 @@ class RedditStats(CommandCog):
         If you are in a sub channel, the subreddit does not need to be specified.
         If you have any questions ask Spaz.
         """
-        subreddit = await self.getSubFromChannel(context)
+        subreddit = await self.get_sub_from_channel(context)
         if len(args) >= 3:
             subreddit, startDate, endDate = args[:3]
         elif len(args) == 2:
@@ -254,7 +254,7 @@ class RedditStats(CommandCog):
                     sub = await self.reddit.subreddit(subreddit)
                     self.bot.start_task(
                         context,
-                        self.genMatrix(context, sub, startDate, endDate, tb=True),
+                        self.gen_matrix(context, sub, startDate, endDate, tb=True),
                     )
                 except asyncprawcore.exceptions.NotFound:
                     await self.error_embed(context, f"r/pics was not found.")
@@ -323,7 +323,7 @@ class RedditStats(CommandCog):
                 for subreddit in subreddits:
                     await self.parseTraffic(subreddit, context)
             else:
-                subreddit = await self.getSubFromChannel(context)
+                subreddit = await self.get_sub_from_channel(context)
                 if subreddit:
                     await self.parseTraffic(subreddit, context)
                 else:
@@ -729,7 +729,7 @@ class RedditStats(CommandCog):
         except CancelledError:
             pass
 
-    async def genMatrix(
+    async def gen_matrix(
         self, context, subreddit, startingDate=None, endingDate=None, tb=False
     ):
         try:
@@ -1029,10 +1029,21 @@ class RedditStats(CommandCog):
                 text=f"{subCount:+,} Subreddits and {subscribers:+,} Subscribers"
             )
         data = (user, subCount, subscribers)
-        await self.sql.execute(
-            "INSERT INTO public.moderators(redditor, subreddits, subscribers) VALUES($1, $2, $3) ON CONFLICT (redditor) DO UPDATE SET subreddits=excluded.subreddits, subscribers=excluded.subscribers",
-            *data,
+        results = parse_sql(
+            await self.sql.fetch(
+                "SELECT * FROM public.moderators WHERE redditor=$1", user
+            )
         )
+        if results:
+            await self.sql.execute(
+                "UPDATE public.moderators SET subreddits=$2, subscribers=$3 WHERE redditor=$1",
+                *data,
+            )
+        else:
+            await self.sql.execute(
+                "INSERT INTO public.moderators(redditor, subreddits, subscribers) VALUES ($1, $2, $3)",
+                *data,
+            )
         if msg1:
             await msg1.delete()
         await context.send(embed=embed)

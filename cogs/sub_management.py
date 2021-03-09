@@ -1,9 +1,6 @@
-import asyncio
-
 import credmgr
 import discord
 import praw
-from discord.ext.commands import ChannelNotFound, TextChannelConverter
 
 from .utils.command_cog import CommandCog
 from .utils.commands import command

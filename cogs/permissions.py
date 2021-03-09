@@ -1,7 +1,6 @@
-import hashlib
-import logging
 import time
 from datetime import datetime
+from typing import Optional
 
 import asyncprawcore
 import discord
@@ -56,29 +55,31 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     def __init__(self, bot):
         super().__init__(bot)
-        self.unverified_role: discord.Role = None
-        self.verified_role: discord.Role = None
+        self.approval_channel: discord.TextChannel = None
         self.approved_role: discord.Role = None
         self.dmz_channel: discord.TextChannel = None
-        self.approval_channel: discord.TextChannel = None
         self.grandfather_role: discord.Role = None
-        self.guild = self.bot.get_guild(785198941535731715)
+        self.unverified_role: discord.Role = None
+        self.verified_role: discord.Role = None
+        self.unapproved_role: discord.Role = None
 
     async def cog_before_invoke(self, context):
-        await self.set_references(context.bot.get_guild(785198941535731715))
+        await self.set_references(context.bot.snoo_guild)
 
     async def set_references(self, guild: discord.Guild):
         objects = {
-            "unverified_role": await self.get_bot_config("unverified_role"),
-            "verified_role": await self.get_bot_config("verified_role"),
+            "approval_channel": await self.get_bot_config("approval_channel"),
             "approved_role": await self.get_bot_config("approved_role"),
             "dmz_channel": await self.get_bot_config("dmz_channel"),
-            "approval_channel": await self.get_bot_config("approval_channel"),
             "grandfather_role": await self.get_bot_config("grandfather_role"),
+            "unverified_role": await self.get_bot_config("unverified_role"),
+            "verified_role": await self.get_bot_config("verified_role"),
+            "unapproved_role": await self.get_bot_config("unapproved_role"),
         }
-        getObject = lambda id: discord.utils.get(guild.roles + guild.channels, id=id)
         for key, value in objects.items():
-            setattr(self, key, getObject(value))
+            setattr(
+                self, key, discord.utils.get(guild.roles + guild.channels, id=value)
+            )
 
     async def send_approval_request(
         self, user_id, member, redditor, verified_message=None, note=""
@@ -103,17 +104,17 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         embed.add_field(
             name="Joined Reddit",
             value=time.strftime(time_format, time.localtime(redditor.created_utc))
-            + f"\n({utime.human_timedelta(datetime.utcfromtimestamp(redditor.created_utc).astimezone())})",
+            + f"\n({utime.human_timedelta(datetime.utcfromtimestamp(redditor.created_utc).astimezone(), accuracy=1)})",
         )
         embed.add_field(
             name="Joined Discord",
             value=member.created_at.astimezone().strftime(time_format)
-            + f"\n({utime.human_timedelta(member.created_at.astimezone())})",
+            + f"\n({utime.human_timedelta(member.created_at.astimezone(), accuracy=1)})",
         )
         embed.add_field(
             name="Joined Server",
             value=member.joined_at.astimezone().strftime(time_format)
-            + f"\n({utime.human_timedelta(member.joined_at.astimezone())})",
+            + f"\n({utime.human_timedelta(member.joined_at.astimezone(), accuracy=1)})",
         )
         embed.set_footer(text=time.strftime(time_format, time.localtime()))
         _, _, subCount, subreddits, subscribers, _ = await self.get_and_calculate_subs(
@@ -186,8 +187,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         embed.add_field(name="Top 20 Subreddits", value=valueString, inline=False)
         return await channel.send(embed=embed)
 
-    @Cog.listener()
-    async def on_member_join(self, member: discord.Member):
+    async def on_join(self, member: discord.Member, context=None):
         await member.add_roles(self.unverified_role)
         self.sql = self.bot.pool
         try:
@@ -215,144 +215,58 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 ),
                 inline=True,
             )
-            link_message = await self.dmz_channel.send(embed=embed)
+            message = await self.dmz_channel.send(embed=embed)
             welcome_message = await self.dmz_channel.send(
                 f"Welcome {member.mention}! Send `.done` after you have verified your reddit account using the above link."
             )
-            await self.sql.execute(
-                "UPDATE users SET link_message_id=$1, welcome_message_id=$2 WHERE user_id=$3",
-                link_message.id,
-                welcome_message.id,
-                member.id,
-            )
         else:
             message = await self.success_embed(
-                self.dmz_channel,
-                f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
+                context if context else self.dmz_channel,
+                f"Verified u/{redditor} successfully!",
             )
             welcome_message = await self.dmz_channel.send(
                 f"Welcome {member.mention}! You have already been verified, please wait for manual approval."
             )
-            await self.sql.execute(
-                "UPDATE users SET link_message_id=$1, welcome_message_id=$2 WHERE user_id=$3",
-                message.id,
-                welcome_message.id,
-                member.id,
-            )
-            result = await self.get_member(member.guild, member.id)
-            if result:
-                if result.status in ["approved", "denied"]:
-                    results = parse_sql(
-                        await self.sql.fetch(
-                            "SELECT * FROM approval_log WHERE user_id=$1 ORDER BY actioned_at DESC LIMIT 1",
-                            member.id,
-                        )
+        await self.sql.execute(
+            "UPDATE users SET link_message_id=$1, welcome_message_id=$2 WHERE user_id=$3",
+            message.id,
+            welcome_message.id,
+            member.id,
+        )
+        result = await self.get_member(member.guild, member.id)
+        if result:
+            if result.status in ["approved", "denied"]:
+                results = parse_sql(
+                    await self.sql.fetch(
+                        "SELECT * FROM approval_log WHERE user_id=$1 ORDER BY actioned_at DESC LIMIT 1",
+                        member.id,
                     )
-                    if results:
-                        actor = await self.get_member(
-                            member.guild, results[0].actor_id, return_member=True
-                        )
-                        await self.send_approval_request(
-                            result.id,
-                            member,
-                            redditor,
-                            note=f"This user was {result.status} by {actor.name}#{actor.discriminator} ({actor.id})",
-                        )
-                else:
+                )
+                if results:
+                    actor = await self.get_member(
+                        member.guild, results[0].actor_id, return_member=True
+                    )
                     await self.send_approval_request(
                         result.id,
                         member,
                         redditor,
-                        note=f"This user was approved by {actor.name}#{actor.discriminator} ({actor.id})",
+                        note=f"This user was {result.status} by {actor.name}#{actor.discriminator} ({actor.id})",
                     )
-
             else:
-                self.log.error("This should not be possible")
+                await self.send_approval_request(result.id, member, redditor)
+
+        else:
+            self.log.error("This should not be possible")
+
+    @Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        await self.on_join(member)
 
     @command(hidden=True)
     @checks.authorized_roles()
     async def _on_join(self, context, *members: discord.Member):
         for member in members:
-            await member.add_roles(self.unverified_role)
-            self.sql = self.bot.pool
-            try:
-                await Users.insert(
-                    user_id=member.id,
-                    username=member.name,
-                    created_at=member.created_at,
-                    joined_at=member.joined_at,
-                )
-            except UniqueViolationError:
-                pass
-            redditor = await self.get_redditor(None, member)
-            if not redditor:
-                embed = discord.Embed(
-                    title="Reddit Account Verification",
-                    description="In order for me to verify your Reddit username, I need you to grant me **temporary** access:",
-                )
-                verification = self.bot.credmgr.userVerification.create(
-                    str(member.id), self.bot.credmgr_bot.redditApp
-                )
-                embed.add_field(
-                    name="Authenticate Here:",
-                    value=self.bot.credmgr_bot.redditApp.genAuthUrl(
-                        userVerification=verification
-                    ),
-                    inline=True,
-                )
-                link_message = await self.dmz_channel.send(embed=embed)
-                welcome_message = await self.dmz_channel.send(
-                    f"Welcome {member.mention}! Send `.done` after you have verified your reddit account using the above link."
-                )
-                await self.sql.execute(
-                    "UPDATE users SET link_message_id=$1, welcome_message_id=$2 WHERE user_id=$3",
-                    link_message.id,
-                    welcome_message.id,
-                    member.id,
-                )
-            else:
-                message = await self.success_embed(
-                    context,
-                    f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
-                )
-                welcome_message = await self.dmz_channel.send(
-                    f"Welcome {member.mention}! You have already been verified, please wait for manual approval."
-                )
-                await self.sql.execute(
-                    "UPDATE users SET link_message_id=$1, welcome_message_id=$2 WHERE user_id=$3",
-                    message.id,
-                    welcome_message.id,
-                    member.id,
-                )
-                result = await self.get_member(member.guild, member.id)
-                if result:
-                    if result.status in ["approved", "denied"]:
-                        results = parse_sql(
-                            await self.sql.fetch(
-                                "SELECT * FROM approval_log WHERE user_id=$1 ORDER BY actioned_at DESC LIMIT 1",
-                                member.id,
-                            )
-                        )
-                        if results:
-                            actor = await self.get_member(
-                                member.guild, results[0].actor_id, return_member=True
-                            )
-                            await self.send_approval_request(
-                                result.id,
-                                member,
-                                redditor,
-                                note=f"This user was {result.status} by {actor.name}#{actor.discriminator} ({actor.id})",
-                            )
-                    else:
-                        await self.send_approval_request(
-                            result.id,
-                            member,
-                            redditor,
-                            note=f"This user was approved by {actor.name}#{actor.discriminator} ({actor.id})",
-                        )
-
-                else:
-                    self.log.error("This should not be possible")
+            await self.on_join(member, context)
 
     async def get_member(self, guild, member_id, return_member=False):
         if member_id > 2147483647:
@@ -501,8 +415,29 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     async def action_user(self, context, member, action):
         if action in ["approve", "deny"]:
             if action == "approve":
-                await member.add_roles(self.approved_role)
-                await self.update_perms(member)
+                roles_to_add = [self.approved_role]
+                redditor = await self.get_redditor(None, member)
+                if not redditor:
+                    await self.error_embed(
+                        self.approval_channel,
+                        f"{member.mention} has not verified their reddit account yet.",
+                    )
+                    return
+                redditor = await self.reddit.redditor(redditor, fetch=True)
+                moderated_subreddits = await redditor.moderated()
+                results = parse_sql(
+                    await self.sql.fetch("SELECT name, role_id FROM subreddits")
+                )
+                if results:
+                    roles_to_add += [
+                        self.bot.snoo_guild.get_role(result.role_id)
+                        for result in results
+                        if result.name in moderated_subreddits
+                    ]
+                await member.add_roles(*roles_to_add)
+                await member.remove_roles(
+                    self.unverified_role, self.unapproved_role, self.grandfather_role
+                )
                 await self.success_embed(
                     self.approval_channel, f"Successfully approved {member.mention}!"
                 )
@@ -511,7 +446,8 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                     reason=f"Denied by {context.author.name}#{context.author.discriminator} ({context.author.id})"
                 )
                 await self.success_embed(
-                    self.approval_channel, f"Successfully denied and kicked {member.mention}!"
+                    self.approval_channel,
+                    f"Successfully denied and kicked {member.mention}!",
                 )
             await self.sql.execute(
                 "UPDATE users SET status=$1 WHERE user_id=$2",
@@ -557,122 +493,169 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 ),
                 inline=True,
             )
-            await member.send(embed=embed)
-            await member.send(
-                f"Send `.done` after you have verified your reddit account using the above link."
-            )
-
-    @command(aliases=["ump"])
-    async def updatemyperms(self, context: Context, *users: discord.Member):
-        if users:
-            if await checks.check_guild_permissions(context, {"administrator": True}):
-                for user in users:
-                    redditor = await self.get_redditor(context, user)
-                    if redditor:
-                        personalChannel = await self.getPersonalChannel(
-                            context, user, create=True
-                        )
-                        role = await self.getPersonalRole(context, user, create=True)
-                        await self.update_perms(
-                            context,
-                            user,
-                            redditor,
-                            personalChannel,
-                            role,
-                            createNewChannels=True,
-                        )
-                        await self.success_embed(
-                            context,
-                            f"Updated permission for {user.mention} successfully!",
-                        )
-            else:
+            try:
+                await member.send(embed=embed)
+                await member.send(
+                    f"Send `.done` after you have verified your reddit account using the above link."
+                )
+            except discord.Forbidden:
                 await self.error_embed(
                     context,
-                    "This command requires the administrator permission when acting on other users.",
-                )
-        else:
-            redditor = await self.get_redditor(context, context.author)
-            if redditor:
-                await self.update_perms(
-                    context,
-                    context.author,
-                    redditor,
-                    personalChannel,
-                    role,
-                    createNewChannels=True,
+                    "I was not able to send you a direct message for verification, please allow direct messages from server members and try again.",
+                    delete_after=10,
                 )
 
+    # @command(aliases=["ump"])
+    # async def updatemyperms(self, context: Context, *users: discord.Member):
+    #     if users:
+    #         if await checks.check_guild_permissions(context, {"administrator": True}):
+    #             for user in users:
+    #                 redditor = await self.get_redditor(context, user)
+    #                 if redditor:
+    #                     personalChannel = await self.getPersonalChannel(context, user, create=True)
+    #                     role = await self.getPersonalRole(context, user, create=True)
+    #                     await self.update_perms(context,user,redditor,personalChannel,role,createNewChannels=True,)
+    #                     await self.success_embed(context,f"Updated permission for {user.mention} successfully!",)
+    #         else:
+    #             await self.error_embed(context,"This command requires the administrator permission when acting on other users.",)
+    #     else:
+    #         redditor = await self.get_redditor(context, context.author)
+    #         if redditor:
+    #             await self.update_perms(context,context.author,redditor,personalChannel,role,createNewChannels=True,)
+
+    def has_roles(self, func, roles, *roles_to_check):
+        return func([role in roles for role in roles_to_check])
+
+    def get_incompatible(self, roles, *pairs):
+        incompatible_pairs = []
+        for role_a, role_b in pairs:
+            if role_a in roles and role_b in roles:
+                incompatible_pairs.append((role_a, role_b))
+        return incompatible_pairs
+
     @command(hidden=True)
-    async def done(self, context: Context, *userid: int):
+    @checks.is_admin()
+    async def adjuser(self, context: Context):
+        for user in context.guild.members:
+            redditor = await self.get_redditor(context, user)
+            roles = set(user.roles)
+            if redditor:
+                if self.has_roles(
+                    all, roles, self.approved_role, self.verified_role
+                ) and not self.has_roles(
+                    any,
+                    roles,
+                    self.unapproved_role,
+                    self.unverified_role,
+                    self.grandfather_role,
+                ):
+                    print(f"{user.name} is good")
+                    continue
+                if self.verified_role not in roles:
+                    await user.add_roles(self.verified_role)
+                    roles.add(self.verified_role)
+                    print(f"+verified {user.name}")
+                    if self.unverified_role in roles:
+                        await user.remove_roles(self.unverified_role)
+                        roles.remove([self.unverified_role])
+
+                if self.grandfather_role in roles:
+                    if self.approved_role not in roles:
+                        await user.add_roles(self.approved_role)
+                        roles.add(self.approved_role)
+                        print(f"+approved {user.name}")
+                    if self.unverified_role in roles:
+                        await user.remove_roles(self.unverified_role)
+                        roles.remove(self.unverified_role)
+                        print(f"-unverified {user.name}")
+                    if self.unapproved_role in roles:
+                        await user.remove_roles(self.unapproved_role)
+                        roles.remove(self.unapproved_role)
+                        print(f"-unapproved {user.name}")
+                    if self.grandfather_role in roles:
+                        await user.remove_roles(self.grandfather_role)
+                        roles.remove(self.grandfather_role)
+                        print(f"-grandfather {user.name}")
+            else:
+                if self.verified_role in roles:
+                    await user.remove_roles(self.verified_role)
+                    roles.remove(self.verified_role)
+                    print(f"-verified {user.name}")
+                    if self.unverified_role not in roles:
+                        await user.add_roles(self.unverified_role)
+                        roles.add(self.unverified_role)
+                        print(f"+unverified {user.name}")
+            incompatible_roles = self.get_incompatible(
+                roles,
+                (self.approved_role, self.grandfather_role),
+                (self.approved_role, self.unapproved_role),
+                (self.verified_role, self.unverified_role),
+            )
+            for role_a, role_b in incompatible_roles:
+                await user.remove_roles(role_b)
+                roles.remove(role_b)
+                print(f"-{role_b.name} {user.name}")
+
+    @command(hidden=True)
+    async def done(self, context: Context, userid: Optional[int]):
         if context.guild:
             if userid:
-                user = discord.utils.get(context.guild.members, id=userid[0])
+                user = discord.utils.get(context.guild.members, id=userid)
             else:
                 user = context.author
         else:
-            user = discord.utils.get(self.guild.members, id=context.author.id)
-        if self.grandfather_role in context.author.roles:
-            await self.action_user(context, user, "approve")
-            return
+            user = discord.utils.get(
+                context.bot.snoo_guild.members, id=context.author.id
+            )
         redditor = await self.get_redditor(context, user)
-        if redditor:
-            # await self.check_pre_redditor(context, redditor)
-            await self.sql.execute(
-                "UPDATE users set status=$1 WHERE user_id=$2", "verified", user.id
+        if not redditor:
+            await self.error_embed(
+                context,
+                "I was unable to verify your reddit account, please try authorizing with the link above again.",
             )
-            results = parse_sql(
-                await self.sql.fetch(
-                    "SELECT id, link_message_id, welcome_message_id FROM users WHERE user_id=$1",
-                    user.id,
-                )
+            return
+        # await self.check_pre_redditor(context, redditor)
+        await user.add_roles(self.unapproved_role, self.verified_role)
+        await user.remove_roles(self.unverified_role)
+        results = parse_sql(
+            await self.sql.fetch(
+                "UPDATE users set status=$1 WHERE user_id=$2 RETURNING id, link_message_id, welcome_message_id",
+                "verified",
+                user.id,
             )
-            if results:
-                result = results[0]
+        )
+        if results:
+            result = results[0]
+            try:
                 messages_to_delete = [
                     self.dmz_channel.get_partial_message(getattr(result, attr))
                     for attr in ["link_message_id", "welcome_message_id"]
                     if getattr(result, attr)
                 ]
-                try:
-                    await context.message.delete()
-                    for message in messages_to_delete:
-                        await message.delete()
-                except Exception:
-                    pass
+                await context.message.delete()
+                for message in messages_to_delete:
+                    await message.delete()
+            except Exception:
+                pass
+
+            if self.grandfather_role in context.author.roles:
+                await self.action_user(context, user, "approve")
                 await self.success_embed(
                     context,
-                    f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
+                    f"Verified u/{redditor} successfully!",
                 )
-                await self.send_approval_request(result.id, user, redditor)
-            else:
-                await self.error_embed(
-                    context,
-                    "I was unable to verify your reddit account, please try authorizing with the link above again.",
-                )
+                return
+
+            await self.success_embed(
+                context,
+                f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
+            )
+            await self.send_approval_request(result.id, user, redditor)
         else:
             await self.error_embed(
                 context,
-                "I was unable to verify your reddit account, please try authorizing with the link above again.",
+                "I was unable to verify your reddit account, please send `.verify` to retry verification.",
             )
-
-    async def update_perms(self, user):
-        await user.add_roles(self.verified_role)
-        await user.remove_roles(self.unverified_role, self.grandfather_role)
-        redditor = await self.reddit.redditor(await self.get_redditor(None, user))
-        moderated_subreddits = await redditor.moderated()
-        results = parse_sql(
-            await self.sql.fetch("SELECT name, role_id FROM subreddits")
-        )
-        if results:
-            roles = [
-                result.role_id
-                for result in results
-                if result.name in moderated_subreddits
-            ]
-            for role in roles:
-                await user.add_roles(
-                    self.bot.get_guild(785198941535731715).get_role(role)
-                )
 
     async def check_pre_redditor(self, context, user):
         try:

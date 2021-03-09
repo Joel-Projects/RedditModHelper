@@ -31,7 +31,6 @@ DEALINGS IN THE SOFTWARE.
 import asyncio
 import datetime
 import decimal
-import enum
 import inspect
 import json
 import logging

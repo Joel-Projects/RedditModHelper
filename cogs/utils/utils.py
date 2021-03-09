@@ -4,9 +4,6 @@ from functools import wraps
 from inspect import getfullargspec
 from typing import NamedTuple
 
-import asyncpraw
-import asyncprawcore as asyncprawcore
-
 
 def genDateString(
     epoch=time.time(), gmtime=False, format="%B %d, %Y at %I:%M:%S %p %Z"
