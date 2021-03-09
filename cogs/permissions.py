@@ -607,57 +607,71 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             user = discord.utils.get(
                 context.bot.snoo_guild.members, id=context.author.id
             )
-        redditor = await self.get_redditor(context, user)
-        if not redditor:
-            await self.error_embed(
-                context,
-                "I was unable to verify your reddit account, please try authorizing with the link above again.",
-            )
-            return
-        # await self.check_pre_redditor(context, redditor)
-        await user.add_roles(self.unapproved_role, self.verified_role)
-        await user.remove_roles(self.unverified_role)
-        results = parse_sql(
-            await self.sql.fetch(
-                "UPDATE users set status=$1 WHERE user_id=$2 RETURNING id, link_message_id, welcome_message_id",
-                "verified",
-                user.id,
-            )
-        )
-        if results:
-            result = results[0]
-            try:
-                messages_to_delete = [
-                    self.dmz_channel.get_partial_message(getattr(result, attr))
-                    for attr in ["link_message_id", "welcome_message_id"]
-                    if getattr(result, attr)
-                ]
-                await context.message.delete()
-                for message in messages_to_delete:
-                    await message.delete()
-            except Exception:
-                pass
-            if context.guild:
-                roles = context.author.roles
-            else:
-                roles = context.bot.snoo_guild.get_member(context.author.id).roles
-            if self.grandfather_role in roles:
-                await self.action_user(context, user, "approve")
-                await self.success_embed(
+        if user:
+            redditor = await self.get_redditor(context, user)
+            if not redditor:
+                await self.error_embed(
                     context,
-                    f"Verified u/{redditor} successfully!",
+                    "I was unable to verify your reddit account, please try authorizing with the link above again.",
                 )
                 return
-            note = "\nNote: you will have to wait for approval before you are allowed to access the server." if self.approved_role not in roles else ""
-            await self.success_embed(
-                context,
-                f"Verified u/{redditor} successfully!{note}",
-            )
-            await self.send_approval_request(result.id, user, redditor)
+            status = await self.sql.fetchval('select status from users where user_id=$1', user.id)
+            if status == 'approved':
+                await user.add_roles(self.approved_role, self.verified_role)
+                await user.remove_roles(self.unverified_role, self.unapproved_role)
+            elif status == 'denied':
+                await self.send_approval_request(await self.sql.fetchval('select id from users where user_id=$1', user.id), user, redditor, "Note: This user was recently denied access.")
+            else:
+                # await self.check_pre_redditor(context, redditor)
+                await user.add_roles(self.unapproved_role, self.verified_role)
+                await user.remove_roles(self.unverified_role)
+                results = parse_sql(
+                    await self.sql.fetch(
+                        "UPDATE users set status=$1 WHERE user_id=$2 RETURNING id, link_message_id, welcome_message_id",
+                        "verified",
+                        user.id,
+                    )
+                )
+                if results:
+                    result = results[0]
+                    try:
+                        messages_to_delete = [
+                            self.dmz_channel.get_partial_message(getattr(result, attr))
+                            for attr in ["link_message_id", "welcome_message_id"]
+                            if getattr(result, attr)
+                        ]
+                        await context.message.delete()
+                        for message in messages_to_delete:
+                            await message.delete()
+                    except Exception:
+                        pass
+                    if self.grandfather_role in user.roles:
+                        await self.action_user(context, user, "approve")
+                        await self.success_embed(
+                            context,
+                            f"Verified u/{redditor} successfully!",
+                        )
+                        return
+                    note = (
+                        "\nNote: you will have to wait for approval before you are allowed to access the server."
+                        if self.approved_role not in user.roles
+                        else ""
+                    )
+                    if note:
+                        await self.send_approval_request(result.id, user, redditor)
+                    await self.success_embed(
+                        context,
+                        f"Verified u/{redditor} successfully!{note}",
+                    )
+                else:
+                    await self.error_embed(
+                        context,
+                        "I was unable to verify your reddit account, please send `.verify` to retry verification.",
+                    )
         else:
             await self.error_embed(
                 context,
-                "I was unable to verify your reddit account, please send `.verify` to retry verification.",
+                "You must be a member of the server to use this command.",
             )
 
     async def check_pre_redditor(self, context, user):
