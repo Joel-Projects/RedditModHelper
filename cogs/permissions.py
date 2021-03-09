@@ -619,6 +619,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             if status == 'approved':
                 await user.add_roles(self.approved_role, self.verified_role)
                 await user.remove_roles(self.unverified_role, self.unapproved_role)
+                await self.success_embed(context, f"Verified u/{redditor} successfully!", )
             elif status == 'denied':
                 await self.send_approval_request(await self.sql.fetchval('select id from users where user_id=$1', user.id), user, redditor, "Note: This user was recently denied access.")
             else:
