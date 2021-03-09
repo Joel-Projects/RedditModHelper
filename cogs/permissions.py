@@ -640,10 +640,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             if context.guild:
                 roles = context.author.roles
             else:
-                roles = (
-                    self.grandfather_role
-                    in context.bot.snoo_guild.get_member(context.author.id).roles
-                )
+                roles = context.bot.snoo_guild.get_member(context.author.id).roles
             if self.grandfather_role in roles:
                 await self.action_user(context, user, "approve")
                 await self.success_embed(
