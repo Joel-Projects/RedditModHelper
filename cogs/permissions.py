@@ -648,10 +648,10 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                     f"Verified u/{redditor} successfully!",
                 )
                 return
-
+            note = "\nNote: you will have to wait for approval before you are allowed to access the server." if self.approved_role not in roles else ""
             await self.success_embed(
                 context,
-                f"Verified u/{redditor} successfully!\nNote: you will have to wait for approval before you are allowed to access the server.",
+                f"Verified u/{redditor} successfully!{note}",
             )
             await self.send_approval_request(result.id, user, redditor)
         else:
