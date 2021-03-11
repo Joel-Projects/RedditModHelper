@@ -49,9 +49,7 @@ def _prefix_callable(bot, msg):
 
 class RedditModHelper(commands.AutoShardedBot):
     def __init__(self, pool):
-        allowed_mentions = discord.AllowedMentions(
-            roles=True, everyone=True, users=True
-        )
+        allowed_mentions = discord.AllowedMentions(roles=True, everyone=True, users=True)
         intents = discord.Intents(
             guilds=True,
             members=True,
@@ -79,9 +77,7 @@ class RedditModHelper(commands.AutoShardedBot):
         self.services = services
         self.credmgr = services.credmgr
         self.credmgr_bot = self.credmgr.bot(bot_name)
-        self.reddit = asyncpraw.Reddit(
-            **services.reddit("Lil_SpazJoekp").config._settings
-        )
+        self.reddit = asyncpraw.Reddit(**services.reddit("Lil_SpazJoekp").config._settings)
         self.tempReddit = partial(self.switch_reddit_instance, bot=self)
         self.pool: asyncpg.pool.Pool = pool
         self.sql: asyncpg.pool.Pool = self.pool
@@ -123,20 +119,14 @@ class RedditModHelper(commands.AutoShardedBot):
 
     async def on_command_error(self, context, error):
         if isinstance(error, commands.NoPrivateMessage):
-            await CommandCog.error_embed(
-                context, "This command cannot be used in private messages."
-            )
+            await CommandCog.error_embed(context, "This command cannot be used in private messages.")
         elif isinstance(error, commands.DisabledCommand):
-            await CommandCog.error_embed(
-                context, "Sorry. This command is disabled and cannot be used."
-            )
+            await CommandCog.error_embed(context, "Sorry. This command is disabled and cannot be used.")
         elif isinstance(error, commands.CheckFailure):
             await CommandCog.error_embed(context, "You're not allowed to do that!")
         elif isinstance(error, commands.CommandInvokeError):
             self.log_error(context, error)
-        elif isinstance(
-            error, (commands.ArgumentParsingError, commands.MissingRequiredArgument)
-        ):
+        elif isinstance(error, (commands.ArgumentParsingError, commands.MissingRequiredArgument)):
             await context.send(error)
         elif isinstance(error, commands.MissingRequiredArgument):
             await context.send_help(context.command)
@@ -157,9 +147,7 @@ class RedditModHelper(commands.AutoShardedBot):
         except AttributeError:
             traceback.print_tb(error.__traceback__)
             if not self.debug:
-                log.error(
-                    f"In {context.command.qualified_name}:\n{error.__class__.__name__}: {error}"
-                )
+                log.error(f"In {context.command.qualified_name}:\n{error.__class__.__name__}: {error}")
             else:
                 print(f"In {context.command.qualified_name}:")
                 print(f"{error.__class__.__name__}: {error}")
@@ -200,14 +188,10 @@ class RedditModHelper(commands.AutoShardedBot):
         if len(argument) > 5 and argument[-5] == "#":
             username, _, discriminator = argument.rpartition("#")
             members = await guild.query_members(username, limit=100, cache=cache)
-            return discord.utils.get(
-                members, name=username, discriminator=discriminator
-            )
+            return discord.utils.get(members, name=username, discriminator=discriminator)
         else:
             members = await guild.query_members(argument, limit=100, cache=cache)
-            return discord.utils.find(
-                lambda m: m.name == argument or m.nick == argument, members
-            )
+            return discord.utils.find(lambda m: m.name == argument or m.nick == argument, members)
 
     async def get_or_fetch_member(self, guild, member_id):
         """Looks up a member in cache or fetches if not found.
@@ -288,25 +272,19 @@ class RedditModHelper(commands.AutoShardedBot):
                 else:
                     yield member
             else:
-                members = await guild.query_members(
-                    limit=1, user_ids=needs_resolution, cache=True
-                )
+                members = await guild.query_members(limit=1, user_ids=needs_resolution, cache=True)
                 if members:
                     yield members[0]
         elif total_need_resolution <= 100:
             # Only a single resolution call needed here
-            resolved = await guild.query_members(
-                limit=100, user_ids=needs_resolution, cache=True
-            )
+            resolved = await guild.query_members(limit=100, user_ids=needs_resolution, cache=True)
             for member in resolved:
                 yield member
         else:
             # We need to chunk these in bits of 100...
             for index in range(0, total_need_resolution, 100):
                 to_resolve = needs_resolution[index : index + 100]
-                resolved = await guild.query_members(
-                    limit=100, user_ids=to_resolve, cache=True
-                )
+                resolved = await guild.query_members(limit=100, user_ids=to_resolve, cache=True)
                 for member in resolved:
                     yield member
 
@@ -330,9 +308,7 @@ class RedditModHelper(commands.AutoShardedBot):
 
         def __enter__(self):
             log.debug(f"Switching to u/{self.user}")
-            return asyncpraw.Reddit(
-                **self.bot.services.reddit(self.user).config._settings
-            )
+            return asyncpraw.Reddit(**self.bot.services.reddit(self.user).config._settings)
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             log.debug("Switching back to u/Lil_SpazJoekp")
@@ -344,9 +320,7 @@ class RedditModHelper(commands.AutoShardedBot):
     @discord.utils.cached_property
     def stats_webhook(self):
         wh_id, wh_token = self.config.stat_webhook
-        hook = discord.Webhook.partial(
-            id=wh_id, token=wh_token, adapter=discord.AsyncWebhookAdapter(self.session)
-        )
+        hook = discord.Webhook.partial(id=wh_id, token=wh_token, adapter=discord.AsyncWebhookAdapter(self.session))
         return hook
 
     async def process_commands(self, message):
@@ -366,11 +340,7 @@ class RedditModHelper(commands.AutoShardedBot):
         await self.invoke(context)
         if len(self.running_tasks.keys()) > 0:
             done = False
-            tasks = [
-                task
-                for user in self.running_tasks.keys()
-                for task in self.running_tasks[user]
-            ]
+            tasks = [task for user in self.running_tasks.keys() for task in self.running_tasks[user]]
             while not done:
                 await asyncio.sleep(1)
                 done = all([task.done() for task in tasks])
@@ -387,9 +357,7 @@ class RedditModHelper(commands.AutoShardedBot):
         user = context.author.id
         task = self.loop.create_task(func)
 
-        task.add_done_callback(
-            partial(self.task_completion_handler, task=task, user=user, context=context)
-        )
+        task.add_done_callback(partial(self.task_completion_handler, task=task, user=user, context=context))
         if not user in self.running_tasks:
             self.running_tasks[user] = {}
         self.running_tasks[user][task] = taskName or context.message.content.replace(

@@ -38,11 +38,7 @@ class Settings(CommandCog):
                 if spacesRemoved:
                     result = quoteWords.sub('\\1"\\2"\\3', spacesRemoved)
                     if result:
-                        finalResult = (
-                            result.replace("'", '"')
-                            .replace(' "', ' \\"')
-                            .replace('" ', '\\" ')
-                        )
+                        finalResult = result.replace("'", '"').replace(' "', ' \\"').replace('" ', '\\" ')
                         loadedJson = json.loads(finalResult)
                         if loadedJson:
                             finalJson = {}
@@ -101,10 +97,7 @@ class Settings(CommandCog):
                     results = await self.sql_select(context)
                 else:
                     results = await self.sql_select(context, setting)
-                results = [
-                    (key.get("key"), json.loads(key.get("value")))
-                    for key in [result for result in results]
-                ]
+                results = [(key.get("key"), json.loads(key.get("value"))) for key in [result for result in results]]
                 if len(results) > 0:
                     result = results[0]
                     value = result[1]["value"]
@@ -113,15 +106,11 @@ class Settings(CommandCog):
                         value=f"```{value}```",
                     )
                 else:
-                    await self.error_embed(
-                        context, f"Could not find setting: `{setting}`"
-                    )
+                    await self.error_embed(context, f"Could not find setting: `{setting}`")
                     return
             await self.success_embed(context, embed)
         else:
-            await self.error_embed(
-                context, "This command requires at least one setting to lookup"
-            )
+            await self.error_embed(context, "This command requires at least one setting to lookup")
 
     @command(hidden=True)
     async def set(self, context, *args):
@@ -146,9 +135,7 @@ class Settings(CommandCog):
         toBeCommitted = {}
         if not argsCount == 0:
             if argsCount % 2 == 0:
-                settings = [
-                    (keys[index], values[index]) for index in range(0, len(keys))
-                ]
+                settings = [(keys[index], values[index]) for index in range(0, len(keys))]
                 embed = Embed(title="Set Bot Config")
                 for setting in settings:
                     key = setting[0]
@@ -165,9 +152,7 @@ class Settings(CommandCog):
                 await self.set_bot_config(**toBeCommitted)
                 await self.success_embed(context, embed)
             else:
-                await self.error_embed(
-                    context, "This command requires even number of arguments"
-                )
+                await self.error_embed(context, "This command requires even number of arguments")
         else:
             await self.error_embed(
                 context,
@@ -197,9 +182,7 @@ class Settings(CommandCog):
         toBeCommitted = {}
         if not argsCount == 0:
             if argsCount % 2 == 0:
-                settings = [
-                    (keys[index], values[index]) for index in range(0, len(keys))
-                ]
+                settings = [(keys[index], values[index]) for index in range(0, len(keys))]
                 embed = Embed(title="Appended Item(s) Successfully!")
                 wasChanged = False
                 for setting in settings:
@@ -208,22 +191,16 @@ class Settings(CommandCog):
                     existing = await self.get_bot_config(key)
                     if isinstance(existing, (list, tuple)):
                         if value in existing:
-                            await self.error_embed(
-                                context, f"{value!r} is already in in {key!r}"
-                            )
+                            await self.error_embed(context, f"{value!r} is already in in {key!r}")
                         else:
                             if value == "all":
-                                await self.error_embed(
-                                    context, f"Setting: `all` is not valid"
-                                )
+                                await self.error_embed(context, f"Setting: `all` is not valid")
                                 continue
                             else:
                                 existing.append(value)
                                 wasChanged = True
                     else:
-                        await self.error_embed(
-                            context, f"Setting: {key!r} is not a list or tuple!"
-                        )
+                        await self.error_embed(context, f"Setting: {key!r} is not a list or tuple!")
                         continue
                     if wasChanged:
                         toBeCommitted[key] = existing
@@ -235,9 +212,7 @@ class Settings(CommandCog):
                     await self.set_bot_config(**toBeCommitted)
                     await self.success_embed(context, embed)
             else:
-                await self.error_embed(
-                    context, "This command requires even number of arguments"
-                )
+                await self.error_embed(context, "This command requires even number of arguments")
         else:
             await self.error_embed(
                 context,
@@ -268,9 +243,7 @@ class Settings(CommandCog):
         toBeCommitted = {}
         if not argsCount == 0:
             if argsCount % 2 == 0:
-                settings = [
-                    (keys[index], values[index]) for index in range(0, len(keys))
-                ]
+                settings = [(keys[index], values[index]) for index in range(0, len(keys))]
                 embed = Embed(title="Removed Item(s) Successfully!")
                 wasChanged = False
                 for setting in settings:
@@ -280,14 +253,10 @@ class Settings(CommandCog):
                     if isinstance(existing, (list, tuple)):
                         if len(existing) > 0:
                             if value in existing:
-                                await self.error_embed(
-                                    context, f"{value} is already in in {key}"
-                                )
+                                await self.error_embed(context, f"{value} is already in in {key}")
                             else:
                                 if value == "all":
-                                    await self.error_embed(
-                                        context, f"Setting: `all` is not valid"
-                                    )
+                                    await self.error_embed(context, f"Setting: `all` is not valid")
                                     continue
                                 else:
                                     if isinstance(existing, tuple):
@@ -299,9 +268,7 @@ class Settings(CommandCog):
                                         existing.remove(value)
                                         wasChanged = True
                         else:
-                            await self.error_embed(
-                                context, f"Setting: {key!r} is not a list or tuple!"
-                            )
+                            await self.error_embed(context, f"Setting: {key!r} is not a list or tuple!")
                     else:
                         await self.error_embed(
                             context,
@@ -317,9 +284,7 @@ class Settings(CommandCog):
                     await self.set_bot_config(**toBeCommitted)
                     await self.success_embed(context, embed)
             else:
-                await self.error_embed(
-                    context, "This command requires even number of arguments"
-                )
+                await self.error_embed(context, "This command requires even number of arguments")
         else:
             await self.error_embed(
                 context,
@@ -360,10 +325,7 @@ class Settings(CommandCog):
             for setting in args:
                 if setting == "all":
                     results = await self.sql_select(context)
-                    results = [
-                        (key.get("key"), json.loads(key.get("value")))
-                        for key in [result for result in results]
-                    ]
+                    results = [(key.get("key"), json.loads(key.get("value"))) for key in [result for result in results]]
                     for result in results:
                         value = result[1]["value"]
                         embed.add_field(
@@ -395,10 +357,7 @@ class Settings(CommandCog):
                         canceled = True
                 else:
                     results = await self.sql_select(context, setting)
-                    results = [
-                        (key.get("key"), json.loads(key.get("value")))
-                        for key in [result for result in results]
-                    ]
+                    results = [(key.get("key"), json.loads(key.get("value"))) for key in [result for result in results]]
                     if len(results) > 0:
                         result = results[0]
                         settingsToDelete.append(setting)
@@ -409,9 +368,7 @@ class Settings(CommandCog):
                         )
                     else:
                         error = True
-                        await self.error_embed(
-                            context, f"Could not find setting: `{setting}`"
-                        )
+                        await self.error_embed(context, f"Could not find setting: `{setting}`")
             if not error:
                 confirm, message = await context.prompt(
                     "Are you sure you want to delete the following settings?",
@@ -422,9 +379,7 @@ class Settings(CommandCog):
                 canceled = not confirm
                 if confirm:
                     for setting in settingsToDelete:
-                        await context.db.execute(
-                            "DELETE FROM settings WHERE key=$1", setting
-                        )
+                        await context.db.execute("DELETE FROM settings WHERE key=$1", setting)
                     embed = Embed(
                         title=f"Deleted {len(settingsToDelete)} setting(s)",
                         color=discord.Color.green(),
@@ -440,9 +395,7 @@ class Settings(CommandCog):
                 embed.color = discord.Color.greyple()
                 await message.edit(embed=embed)
         else:
-            await self.error_embed(
-                context, "This command requires at least one setting to lookup"
-            )
+            await self.error_embed(context, "This command requires at least one setting to lookup")
 
 
 def setup(bot):

@@ -101,9 +101,7 @@ class RedditStats(CommandCog):
         self.bot.start_task(context, self.getModlog(context, **kwargs))
 
     @command(aliases=["mx"])
-    async def matrix(
-        self, context: Context, *args, startDate: str = None, endDate: str = None
-    ):
+    async def matrix(self, context: Context, *args, startDate: str = None, endDate: str = None):
         """
         Generate a toolbox like mod matrix for <subreddit> from <startDate> [optional] to <endDate> [optional]
 
@@ -163,16 +161,12 @@ class RedditStats(CommandCog):
         if subreddit:
             try:
                 sub = await self.reddit.subreddit(subreddit)
-                self.bot.start_task(
-                    context, self.gen_matrix(context, sub, startDate, endDate)
-                )
+                self.bot.start_task(context, self.gen_matrix(context, sub, startDate, endDate))
             except asyncprawcore.exceptions.NotFound:
                 await self.error_embed(context, f"r/{subreddit} was not found.")
                 return
         else:
-            await self.error_embed(
-                context, "This command can only be used in a sub channel."
-            )
+            await self.error_embed(context, "This command can only be used in a sub channel.")
             return
 
     @command(aliases=["tbmx"])
@@ -260,9 +254,7 @@ class RedditStats(CommandCog):
                     await self.error_embed(context, f"r/pics was not found.")
                     return
             else:
-                await self.error_embed(
-                    context, "Please use this command in a sub channel or specify sub."
-                )
+                await self.error_embed(context, "Please use this command in a sub channel or specify sub.")
                 return
 
     @command(aliases=["ms"])
@@ -351,11 +343,7 @@ class RedditStats(CommandCog):
                 author = context.message.author
                 userID = author.id
                 encodedAuthor = hashlib.sha256(str(userID).encode("utf-8")).hexdigest()
-                results = parse_sql(
-                    await self.sql.fetch(
-                        "SELECT * FROM verified WHERE id=$1", encodedAuthor
-                    )
-                )
+                results = parse_sql(await self.sql.fetch("SELECT * FROM verified WHERE id=$1", encodedAuthor))
                 if results:
                     moderators = [results[0].redditor]
                 else:
@@ -398,12 +386,7 @@ class RedditStats(CommandCog):
             "multireddit": "multi",
         }
         validKwargStr = ", ".join(
-            [
-                arg
-                if not validKwargs.index(arg) + 1 == len(validKwargs)
-                else f"and {arg}"
-                for arg in validKwargs
-            ]
+            [arg if not validKwargs.index(arg) + 1 == len(validKwargs) else f"and {arg}" for arg in validKwargs]
         )
         subGroups = {}
         multiGroups = {}
@@ -500,12 +483,7 @@ class RedditStats(CommandCog):
             "action": "action",
         }
         validKwargStr = ", ".join(
-            [
-                arg
-                if not validKwargs.index(arg) + 1 == len(validKwargs)
-                else f"and {arg}"
-                for arg in validKwargs
-            ]
+            [arg if not validKwargs.index(arg) + 1 == len(validKwargs) else f"and {arg}" for arg in validKwargs]
         )
         for arg in args:
             splitArg = arg.split("=")
@@ -590,11 +568,7 @@ class RedditStats(CommandCog):
             "target_title": "Actioned Item Title",
         }
         results = await sql.fetch(*args)
-        csvheader = [
-            columnMapping[column]
-            for column in list(results[0].keys())
-            if column in columnMapping
-        ]
+        csvheader = [columnMapping[column] for column in list(results[0].keys()) if column in columnMapping]
         rows = [tuple(list(result.values())) for result in results]
         try:
             if timezonestr.lower() == "utc":
@@ -614,13 +588,9 @@ class RedditStats(CommandCog):
             if len(rows) > 0:
                 self.log.info("Sending File")
                 sheetManager = SpreadsheetManager()
-                results = parse_sql(
-                    await self.sql.fetch("SELECT email FROM sioux.spreadsheet_users")
-                )
+                results = parse_sql(await self.sql.fetch("SELECT email FROM sioux.spreadsheet_users"))
                 emails = [i.email for i in results]
-                return sheetManager.processAndUpload(
-                    filename, csvheader, rows, "ModLogs", emails
-                )
+                return sheetManager.processAndUpload(filename, csvheader, rows, "ModLogs", emails)
             else:
                 await self.error_embed(context, "No logs found")
         except pytz.exceptions.UnknownTimeZoneError:
@@ -674,9 +644,7 @@ class RedditStats(CommandCog):
                         if limit:
                             limit = int(limit)
                     except:
-                        await self.error_embed(
-                            context, "Limit must be a whole number, skipping limit"
-                        )
+                        await self.error_embed(context, "Limit must be a whole number, skipping limit")
                     if user or url or mod or sub or action:
                         if user:
                             userRegex = r"https?:\/\/(www\.|old\.|new\.)?reddit\.com\/(user|u)/.*?$"
@@ -684,9 +652,7 @@ class RedditStats(CommandCog):
                             if match:
                                 thing = await self.checkUrl(context, user)
                             else:
-                                thing = await self.checkUrl(
-                                    context, f"https://reddit.com/u/{user}"
-                                )
+                                thing = await self.checkUrl(context, f"https://reddit.com/u/{user}")
                             if thing:
                                 nextArg("target_author", thing.name)
                                 names.append(thing.name)
@@ -715,9 +681,7 @@ class RedditStats(CommandCog):
                             values.append(limit)
                         sqlStatement = await sql.prepare((" ".join(parts)))
                         filename = "_".join(names + [suffix])
-                        link = await self.generateCSV(
-                            context, sqlStatement, filename, timezone, tuple(values)
-                        )
+                        link = await self.generateCSV(context, sqlStatement, filename, timezone, tuple(values))
                         await context.send(
                             f"Hey {context.author.mention}, got your requested modlogs logs. You can view it here: {link}"
                         )
@@ -729,9 +693,7 @@ class RedditStats(CommandCog):
         except CancelledError:
             pass
 
-    async def gen_matrix(
-        self, context, subreddit, startingDate=None, endingDate=None, tb=False
-    ):
+    async def gen_matrix(self, context, subreddit, startingDate=None, endingDate=None, tb=False):
         try:
             async with context.typing():
                 async with context.acquire() as sql:
@@ -740,14 +702,10 @@ class RedditStats(CommandCog):
                     if self.checkDateErrored:
                         self.checkDateErrored = False
                         return
-                    startDate = await self.checkDate(
-                        context, startingDate, currentMonth=True
-                    )
+                    startDate = await self.checkDate(context, startingDate, currentMonth=True)
                     endDate = await self.checkDate(context, endingDate, today=True)
                     if endDate < startDate:
-                        await self.error_embed(
-                            context, "Start date must be before end date"
-                        )
+                        await self.error_embed(context, "Start date must be before end date")
                         return
                     data = (subreddit.display_name, startDate, endDate)
                     embed.add_field(
@@ -790,9 +748,7 @@ class RedditStats(CommandCog):
                                 params = {"limit": 500, "after": after}
                             else:
                                 params = {"limit": 500}
-                            modlog = await reddit.get(
-                                f"r/{subreddit.display_name}/about/log", params=params
-                            )
+                            modlog = await reddit.get(f"r/{subreddit.display_name}/about/log", params=params)
                             actions = [action for action in modlog]
                             responseCount = len(actions)
                             after = actions[-1].id
@@ -804,15 +760,11 @@ class RedditStats(CommandCog):
                                     },
                                     {
                                         "name": "Starting Date",
-                                        "value": startDate.strftime(
-                                            f"%B {ordinal(startDate.day)}, %Y"
-                                        ),
+                                        "value": startDate.strftime(f"%B {ordinal(startDate.day)}, %Y"),
                                     },
                                     {
                                         "name": "Ending Date",
-                                        "value": endDate.strftime(
-                                            f"%B {ordinal(endDate.day)}, %Y"
-                                        ),
+                                        "value": endDate.strftime(f"%B {ordinal(endDate.day)}, %Y"),
                                     },
                                     {"name": "Counted Actions", "value": f"{i:,}"},
                                     {
@@ -824,16 +776,12 @@ class RedditStats(CommandCog):
                                     },
                                 )
                                 if i == 1 or i % 1000 == 0 and i != 0:
-                                    msg = await self.statusUpdateEmbed(
-                                        msg, "Getting mod actions...", *fields
-                                    )
+                                    msg = await self.statusUpdateEmbed(msg, "Getting mod actions...", *fields)
                                 if startEpoch <= action.created_utc <= endEpoch:
                                     i += 1
                                     thingType = None
                                     if action.target_fullname:
-                                        thingType = thingTypes[
-                                            action.target_fullname.split("_")[0]
-                                        ]
+                                        thingType = thingTypes[action.target_fullname.split("_")[0]]
                                     logAction = Result(
                                         moderator=action._mod,
                                         mod_action=action.action,
@@ -845,12 +793,8 @@ class RedditStats(CommandCog):
                                     continue
                                 else:
                                     msg.embeds[0].color = discord.Color.green()
-                                    msg = await self.statusDoneEmbed(
-                                        msg, "Done", *fields
-                                    )
-                                    endDate = datetime.fromtimestamp(
-                                        action.created_utc, tz=dt.timezone.utc
-                                    )
+                                    msg = await self.statusDoneEmbed(msg, "Done", *fields)
+                                    endDate = datetime.fromtimestamp(action.created_utc, tz=dt.timezone.utc)
                                     endWhile = True
                                     break
                             if endWhile:
@@ -870,10 +814,7 @@ class RedditStats(CommandCog):
                         results = parse_sql(results)
                     action_types = set()
                     action_types = self._simply_mod_actions(action_types, results)
-                    mods = {
-                        result.moderator: {action: 0 for action in action_types}
-                        for result in results
-                    }
+                    mods = {result.moderator: {action: 0 for action in action_types} for result in results}
                     subreddit = await self.reddit.subreddit("pics")
                     subMods = await subreddit.moderator()
                     for mod in subMods:
@@ -895,9 +836,7 @@ class RedditStats(CommandCog):
                     # df = df.loc[:, (df != 0).any(axis=0)]
                     filename = f'{subreddit.display_name}-matrix-{startDate.strftime("%m/%d/%Y")}-to-{endDate.strftime("%m/%d/%Y")}'
                     matrix = io.BytesIO()
-                    dataframe_image.export(
-                        df, matrix, max_cols=-1, table_conversion="matplotlib"
-                    )
+                    dataframe_image.export(df, matrix, max_cols=-1, table_conversion="matplotlib")
                     matrix = io.BytesIO(matrix.getvalue())
 
                     await context.send(
@@ -911,7 +850,7 @@ class RedditStats(CommandCog):
                         ],
                     )
         except CancelledError:
-            await self.cancelledEmbed(context, msg)
+            await self.cancelled_embed(context, msg)
         except Exception as error:
             self.log.error(error)
 
@@ -925,14 +864,10 @@ class RedditStats(CommandCog):
     def _simplify_action(result):
         mod_action = result.mod_action
         if "sticky" in mod_action or "lock" in mod_action:
-            mod_action += {"submission": "link", "link": "link", "comment": "comment"}[
-                result.target_type.lower()
-            ]
+            mod_action += {"submission": "link", "link": "link", "comment": "comment"}[result.target_type.lower()]
         return mod_action
 
-    async def checkDate(
-        self, context, date, *, lastMonth=False, currentMonth=False, today=False
-    ):
+    async def checkDate(self, context, date, *, lastMonth=False, currentMonth=False, today=False):
         if date:
             if isinstance(date, int):
                 if 1 <= date <= 12:
@@ -955,9 +890,7 @@ class RedditStats(CommandCog):
                     return
         else:
             if today:
-                parsedDate = parseDate(
-                    time.strftime("%m/%d/%Y %I:%M:%S %p", time.gmtime())
-                )
+                parsedDate = parseDate(time.strftime("%m/%d/%Y %I:%M:%S %p", time.gmtime()))
             else:
                 if lastMonth:
                     months = 1
@@ -967,22 +900,19 @@ class RedditStats(CommandCog):
                     time.strftime(
                         "%m",
                         time.gmtime(
-                            datetime.timestamp(
-                                datetime.today()
-                                - dateutil.relativedelta.relativedelta(months=months)
-                            )
+                            datetime.timestamp(datetime.today() - dateutil.relativedelta.relativedelta(months=months))
                         ),
                     )
                 )
         return parsedDate
 
-    def genEmbed(self, user, subCount, subscribers, subAverage, remaining, zeroCount):
+    def genEmbed(self, user, sub_count, subscribers, subAverage, remaining, zeroCount):
         embed = discord.Embed(
             title=f"Moderated Subreddit Stats for u/{user}",
             url=f"https://www.reddit.com/user/{user}",
         )
         embed.add_field(name="Reddit Username", value=user)
-        embed.add_field(name="Subreddit Count", value=f"{subCount:,}")
+        embed.add_field(name="Subreddit Count", value=f"{sub_count:,}")
         embed.add_field(name="Subscriber Count", value=f"{subscribers:,}")
         embed.add_field(name="Avg. Subscriber Count", value=f"{subAverage:,}")
         embed.add_field(name="Subreddits with 1 Subs", value=f"{remaining:,}")
@@ -993,47 +923,30 @@ class RedditStats(CommandCog):
         (
             remaining,
             subAverage,
-            subCount,
+            sub_count,
             subreddits,
             subscribers,
             zeroCount,
         ) = await self.get_and_calculate_subs(user)
-        embed = self.genEmbed(
-            user, subCount, subscribers, subAverage, remaining, zeroCount
+        embed = self.genEmbed(user, sub_count, subscribers, subAverage, remaining, zeroCount)
+        value_string = "\n".join(
+            [f"{sub_rank}. {subreddit[0]}: {subreddit[1]:,}" for sub_rank, subreddit in enumerate(subreddits[:20], 1)]
         )
-        valueString = "\n".join(
-            [
-                f"{subRank}. {subreddit[0]}: {subreddit[1]:,}"
-                for subRank, subreddit in enumerate(subreddits[:20], 1)
-            ]
-        )
-        embed.add_field(name="Top 20 Subreddits", value=valueString, inline=False)
-        results = parse_sql(
-            await self.sql.fetch(
-                "SELECT * FROM public.moderators WHERE redditor ilike $1", user
-            )
-        )
+        embed.add_field(name="Top 20 Subreddits", value=value_string, inline=False)
+        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", user))
         if results:
             redditor = results[0]
             user = redditor.redditor
-            formattedTime = datetime.astimezone(redditor.updated).strftime(
-                "%B %d, %Y at %I:%M:%S %p %Z"
-            )
+            formattedTime = datetime.astimezone(redditor.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
             previousSubscriberCount = redditor.subscribers
-            previousSubCount = redditor.subreddits
+            previous_sub_count = redditor.subreddits
             embed.set_footer(
-                text=f"{subCount - previousSubCount:+,} Subreddits and {subscribers - previousSubscriberCount:+,} Subscribers since I last checked on {formattedTime}"
+                text=f"{sub_count - previous_sub_count:+,} Subreddits and {subscribers - previousSubscriberCount:+,} Subscribers since I last checked on {formattedTime}"
             )
         else:
-            embed.set_footer(
-                text=f"{subCount:+,} Subreddits and {subscribers:+,} Subscribers"
-            )
-        data = (user, subCount, subscribers)
-        results = parse_sql(
-            await self.sql.fetch(
-                "SELECT * FROM public.moderators WHERE redditor=$1", user
-            )
-        )
+            embed.set_footer(text=f"{sub_count:+,} Subreddits and {subscribers:+,} Subscribers")
+        data = (user, sub_count, subscribers)
+        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor=$1", user))
         if results:
             await self.sql.execute(
                 "UPDATE public.moderators SET subreddits=$2, subscribers=$3 WHERE redditor=$1",
@@ -1048,13 +961,13 @@ class RedditStats(CommandCog):
             await msg1.delete()
         await context.send(embed=embed)
 
-    def genEmbed(self, user, subCount, subscribers, subAverage, remaining, zeroCount):
+    def genEmbed(self, user, sub_count, subscribers, subAverage, remaining, zeroCount):
         embed = discord.Embed(
             title=f"Moderated Subreddit Stats for u/{user}",
             url=f"https://www.reddit.com/user/{user}",
         )
         embed.add_field(name="Reddit Username", value=user)
-        embed.add_field(name="Subreddit Count", value=f"{subCount:,}")
+        embed.add_field(name="Subreddit Count", value=f"{sub_count:,}")
         embed.add_field(name="Subscriber Count", value=f"{subscribers:,}")
         embed.add_field(name="Avg. Subscriber Count", value=f"{subAverage:,}")
         embed.add_field(name="Subreddits with 1 Subs", value=f"{remaining:,}")
@@ -1069,9 +982,7 @@ class RedditStats(CommandCog):
         embed.add_field(name="Action", value=actionMapping[action.mod_action])
         embed.add_field(
             name="Action Date/Time",
-            value=action.created_utc.astimezone(pytz.timezone("US/Pacific")).strftime(
-                "%B %d, %Y at %I:%M:%S %p %Z"
-            ),
+            value=action.created_utc.astimezone(pytz.timezone("US/Pacific")).strftime("%B %d, %Y at %I:%M:%S %p %Z"),
         )
         if getattr(action, "subreddit", None):
             subreddit = f"[{action.subreddit}](https://reddit.com/r/{action.subreddit})"
@@ -1079,22 +990,15 @@ class RedditStats(CommandCog):
             subreddit = "None"
         embed.add_field(name="Subreddit", value=subreddit)
         embed.add_field(name="Details", value=getattr(action, "details", "None"))
-        embed.add_field(
-            name="Description", value=getattr(action, "description", "None")
-        )
-        if getattr(action, "target_title", None) and getattr(
-            action, "target_permalink", None
-        ):
+        embed.add_field(name="Description", value=getattr(action, "description", "None"))
+        if getattr(action, "target_title", None) and getattr(action, "target_permalink", None):
             embed.add_field(
                 name="Target",
                 value=f"[{action.target_title}](https://reddit.com{action.target_permalink})",
             )
         else:
             embed.add_field(name="Target", value="None")
-        if (
-            getattr(action, "target_author", None)
-            and getattr(action, "target_author", None) != ""
-        ):
+        if getattr(action, "target_author", None) and getattr(action, "target_author", None) != "":
             if getattr(action, "target_author", None):
                 targetAuthor = f"[{action.target_author}](https://reddit.com/user/{action.target_author})"
             else:

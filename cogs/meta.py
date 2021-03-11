@@ -37,9 +37,7 @@ class BotHelpPageSource(menus.ListPageSource):
     def __init__(self, help_command, commands):
         # entries = [(cog, len(sub)) for cog, sub in commands.items()]
         # entries.sort(key=lambda t: (t[0].qualified_name, t[1]), reverse=True)
-        super().__init__(
-            entries=sorted(commands.keys(), key=lambda c: c.qualified_name), per_page=6
-        )
+        super().__init__(entries=sorted(commands.keys(), key=lambda c: c.qualified_name), per_page=6)
         self.commands = commands
         self.help_command = help_command
         self.prefix = help_command.clean_prefix
@@ -89,9 +87,7 @@ class BotHelpPageSource(menus.ListPageSource):
             "For more help, Contact <@393801572858986496>."
         )
 
-        embed = discord.Embed(
-            title="Categories", description=description, color=discord.Color.blurple()
-        )
+        embed = discord.Embed(title="Categories", description=description, color=discord.Color.blurple())
 
         for cog in cogs:
             commands = self.commands.get(cog)
@@ -129,13 +125,9 @@ class GroupHelpPageSource(menus.ListPageSource):
 
         maximum = self.get_max_pages()
         if maximum > 1:
-            embed.set_author(
-                name=f"Page {menu.current_page + 1}/{maximum} ({len(self.entries)} commands)"
-            )
+            embed.set_author(name=f"Page {menu.current_page + 1}/{maximum} ({len(self.entries)} commands)")
 
-        embed.set_footer(
-            text=f'Use "{self.prefix}help command" for more info on a command.'
-        )
+        embed.set_footer(text=f'Use "{self.prefix}help command" for more info on a command.')
         return embed
 
 
@@ -171,9 +163,7 @@ class HelpMenu(RoboPages):
         for name, value in entries:
             embed.add_field(name=name, value=value, inline=False)
 
-        embed.set_footer(
-            text=f"We were on page {self.current_page + 1} before this message."
-        )
+        embed.set_footer(text=f"We were on page {self.current_page + 1} before this message.")
         await self.message.edit(embed=embed)
 
         async def go_back_to_current_page():
@@ -257,9 +247,7 @@ class PaginatedHelpCommand(commands.HelpCommand):
                 parsedDate = self.parseDate(date)
         else:
             if today:
-                parsedDate = self.parseDate(
-                    time.strftime("%m/%d/%Y %I:%M:%S %p", time.localtime())
-                )
+                parsedDate = self.parseDate(time.strftime("%m/%d/%Y %I:%M:%S %p", time.localtime()))
             else:
                 if lastMonth:
                     months = 1
@@ -269,10 +257,7 @@ class PaginatedHelpCommand(commands.HelpCommand):
                     time.strftime(
                         "%m",
                         time.gmtime(
-                            datetime.timestamp(
-                                datetime.today()
-                                - dateutil.relativedelta.relativedelta(months=months)
-                            )
+                            datetime.timestamp(datetime.today() - dateutil.relativedelta.relativedelta(months=months))
                         ),
                     )
                 )
@@ -293,11 +278,7 @@ class PaginatedHelpCommand(commands.HelpCommand):
                     else dateStr: self.getDateStr(None, currentMonth=True)
                     if dateStr == "none"
                     else self.getDateStr(dateStr.replace("_", " "))
-                    for dateStr in [
-                        tup[1]
-                        for tup in string.Formatter().parse(command.help)
-                        if tup[1] is not None
-                    ]
+                    for dateStr in [tup[1] for tup in string.Formatter().parse(command.help) if tup[1] is not None]
                 }
             )
         if command.description:
@@ -378,9 +359,7 @@ class Meta(CommandCog):
                 )
         commands = order_dict(commands)
         if os.path.isfile("command_tests.json"):
-            with open("command_tests.json", "r") as n, open(
-                "command_tests_old.json", "w"
-            ) as o:
+            with open("command_tests.json", "r") as n, open("command_tests_old.json", "w") as o:
                 o.write(n.read())
         with open("command_tests.json", "w") as f:
             json.dump(commands, f, indent=4)
@@ -389,9 +368,7 @@ class Meta(CommandCog):
     @command(aliases=["rc"])
     async def runningcommands(self, context):
         tasks = copy.copy(self.bot.running_tasks)
-        is_admin = await checks.check_guild_permissions(
-            context, {"administrator": True}
-        )
+        is_admin = await checks.check_guild_permissions(context, {"administrator": True})
         running_tasks = {}
         if is_admin:
             embed = Embed(title="Running Commands", color=discord.Color.purple())
@@ -411,29 +388,23 @@ class Meta(CommandCog):
                         except ValueError:
                             pass
                 i = 0
-                valueString = "\n".join(strings)
-                embed.add_field(name=username, value=valueString)
+                value_string = "\n".join(strings)
+                embed.add_field(name=username, value=value_string)
         else:
             embed = Embed(title="Your Running Commands", color=discord.Color.purple())
             strings = []
-            for i, task in enumerate(
-                self.bot.running_tasks[context.author.id].items(), 1
-            ):
+            for i, task in enumerate(self.bot.running_tasks[context.author.id].items(), 1):
                 strings.append(f"{i}. {task[1]}")
                 running_tasks[i] = task[0]
-            valueString = "\n".join(strings)
-            embed.add_field(name="Commands", value=valueString)
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
+            value_string = "\n".join(strings)
+            embed.add_field(name="Commands", value=value_string)
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         await context.send(embed=embed)
 
     @command(aliases=["c"])
     async def cancel(self, context, *commands):
         tasks = copy.copy(self.bot.running_tasks)
-        is_admin = await checks.check_guild_permissions(
-            context, {"administrator": True}
-        )
+        is_admin = await checks.check_guild_permissions(context, {"administrator": True})
         running_tasks = {}
         strings = {}
         i = 0
@@ -477,18 +448,14 @@ class Meta(CommandCog):
             except RuntimeError:
                 await context.reinvoke()
                 return
-        for user, valueString in strings.items():
-            embed.add_field(name=user, value="\n".join(valueString))
+        for user, value_string in strings.items():
+            embed.add_field(name=user, value="\n".join(value_string))
         if commands:
             cancelAll = "all" in [i.lower() for i in commands]
             if cancelAll:
-                embed.set_footer(
-                    text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-                )
+                embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
                 await context.send(embed=embed)
-                confirm = await context.prompt(
-                    "Are you sure you want to cancel the above commands?"
-                )
+                confirm = await context.prompt("Are you sure you want to cancel the above commands?")
                 if confirm:
                     for task in running_tasks.values():
                         try:
@@ -551,9 +518,7 @@ class Meta(CommandCog):
 
         embed = discord.Embed(title="Prefixes", color=discord.Color.blurple())
         embed.set_footer(text=f"{len(prefixes)} prefixes")
-        embed.description = "\n".join(
-            f"{index}. {elem}" for index, elem in enumerate(prefixes, 1)
-        )
+        embed.description = "\n".join(f"{index}. {elem}" for index, elem in enumerate(prefixes, 1))
         await context.send(embed=embed)
 
     @prefix.command(name="add", ignore_extra=False)
@@ -585,9 +550,7 @@ class Meta(CommandCog):
     @prefix_add.error
     async def prefix_add_error(self, context, error):
         if isinstance(error, commands.TooManyArguments):
-            await context.send(
-                "You've given too many prefixes. Either quote it or only do it one by one."
-            )
+            await context.send("You've given too many prefixes. Either quote it or only do it one by one.")
 
     @prefix.command(name="remove", aliases=["delete"], ignore_extra=False)
     @checks.is_mod()
@@ -637,9 +600,7 @@ class Meta(CommandCog):
         exit()
 
     @command()
-    async def avatar(
-        self, context, *, user: Union[discord.Member, discord.User] = None
-    ):
+    async def avatar(self, context, *, user: Union[discord.Member, discord.User] = None):
         """Shows a user's enlarged avatar (if possible)."""
         embed = discord.Embed()
         user = user or context.author
@@ -662,9 +623,7 @@ class Meta(CommandCog):
             )
 
         embed = discord.Embed()
-        roles = [
-            role.name.replace("@", "@\u200b") for role in getattr(user, "roles", [])
-        ]
+        roles = [role.name.replace("@", "@\u200b") for role in getattr(user, "roles", [])]
         shared = sum(
             guild.get_member(
                 user.id,
@@ -686,19 +645,13 @@ class Meta(CommandCog):
             value=format_date(getattr(user, "joined_at", None)),
             inline=False,
         )
-        embed.add_field(
-            name="Created", value=format_date(user.created_at), inline=False
-        )
+        embed.add_field(name="Created", value=format_date(user.created_at), inline=False)
 
         voice = getattr(user, "voice", None)
         if voice is not None:
             vc = voice.channel
             other_people = len(vc.members) - 1
-            voice = (
-                f"{vc.name} with {other_people} others"
-                if other_people
-                else f"{vc.name} by themselves"
-            )
+            voice = f"{vc.name} with {other_people} others" if other_people else f"{vc.name} by themselves"
             embed.add_field(name="Voice", value=voice, inline=False)
 
         if roles:
@@ -750,9 +703,7 @@ class Meta(CommandCog):
             totals[channel_type] += 1
             if not perms.read_messages:
                 secret[channel_type] += 1
-            elif isinstance(channel, discord.VoiceChannel) and (
-                not perms.connect or not perms.speak
-            ):
+            elif isinstance(channel, discord.VoiceChannel) and (not perms.connect or not perms.speak):
                 secret[channel_type] += 1
 
         embed = discord.Embed()
@@ -807,12 +758,8 @@ class Meta(CommandCog):
         embed.add_field(name="Channels", value="\n".join(channel_info))
 
         if guild.premium_tier != 0:
-            boosts = (
-                f"Level {guild.premium_tier}\n{guild.premium_subscription_count} boosts"
-            )
-            last_boost = max(
-                guild.members, key=lambda m: m.premium_since or guild.created_at
-            )
+            boosts = f"Level {guild.premium_tier}\n{guild.premium_subscription_count} boosts"
+            last_boost = max(guild.members, key=lambda m: m.premium_since or guild.created_at)
             if last_boost.premium_since is not None:
                 boosts = f"{boosts}\nLast Boost: {last_boost} ({utime.human_timedelta(last_boost.premium_since, accuracy=2)})"
             embed.add_field(name="Boosts", value=boosts, inline=False)
@@ -905,9 +852,7 @@ class Meta(CommandCog):
 
     @command()
     @commands.is_owner()
-    async def debugpermissions(
-        self, context, guild_id: int, channel_id: int, author_id: int = None
-    ):
+    async def debugpermissions(self, context, guild_id: int, channel_id: int, author_id: int = None):
         """Shows permission resolution for a channel and an optional author."""
 
         guild = self.bot.get_guild(guild_id)

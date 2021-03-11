@@ -73,15 +73,11 @@ class GlobalChannel(commands.Converter):
             try:
                 channel_id = int(argument, base=10)
             except ValueError:
-                raise commands.BadArgument(
-                    f"Could not find a channel by ID {argument!r}."
-                )
+                raise commands.BadArgument(f"Could not find a channel by ID {argument!r}.")
             else:
                 channel = context.bot.get_channel(channel_id)
                 if channel is None:
-                    raise commands.BadArgument(
-                        f"Could not find a channel by ID {argument!r}."
-                    )
+                    raise commands.BadArgument(f"Could not find a channel by ID {argument!r}.")
                 return channel
 
 
@@ -95,14 +91,10 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
 
     async def run_process(self, command):
         try:
-            process = await asyncio.create_subprocess_shell(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
+            process = await asyncio.create_subprocess_shell(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             result = await process.communicate()
         except NotImplementedError:
-            process = subprocess.Popen(
-                command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             result = await self.bot.loop.run_in_executor(None, process.communicate)
 
         return [output.decode() for output in result]
@@ -123,17 +115,13 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
                 spaz = context.guild.get_member(
                     393801572858986496,
                 )
-                embed = discord.Embed(
-                    title="Sudo command was used", color=discord.Color.red()
-                )
+                embed = discord.Embed(title="Sudo command was used", color=discord.Color.red())
                 embed.add_field(name="User", value=context.message.author.mention)
                 embed.add_field(
                     name="Command",
                     value=f"[{context.message.content}]({context.message.jump_url})",
                 )
-                embed.set_footer(
-                    text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-                )
+                embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
                 spaz.send(embed=embed)
 
     async def cog_check(self, context):
@@ -216,12 +204,8 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
             return await context.send(stdout)
 
         modules = self.find_modules_from_git(stdout)
-        mods_text = "\n".join(
-            f"{index}. `{module}`" for index, (_, module) in enumerate(modules, start=1)
-        )
-        prompt_text = (
-            f"This will update the following modules, are you sure?\n{mods_text}"
-        )
+        mods_text = "\n".join(f"{index}. `{module}`" for index, (_, module) in enumerate(modules, start=1))
+        prompt_text = f"This will update the following modules, are you sure?\n{mods_text}"
         confirm = await context.prompt(prompt_text, reacquire=False)
         if not confirm:
             return await context.send("Aborting.")
@@ -248,9 +232,7 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
                 else:
                     statuses.append((context.tick(True), module))
 
-        await context.send(
-            "\n".join(f"{status}: `{module}`" for status, module in statuses)
-        )
+        await context.send("\n".join(f"{status}: `{module}`" for status, module in statuses))
 
     @command(pass_context=True, name="eval")
     async def _eval(self, context, *, body: str):
@@ -315,28 +297,18 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
         }
 
         if context.channel.id in self.sessions:
-            await context.send(
-                "Already running a REPL session in this channel. Exit it with `quit`."
-            )
+            await context.send("Already running a REPL session in this channel. Exit it with `quit`.")
             return
 
         self.sessions.add(context.channel.id)
-        await context.send(
-            "Enter code to execute or evaluate. `exit()` or `quit` to exit."
-        )
+        await context.send("Enter code to execute or evaluate. `exit()` or `quit` to exit.")
 
         def check(m):
-            return (
-                m.author.id == context.author.id
-                and m.channel.id == context.channel.id
-                and m.content.startswith("`")
-            )
+            return m.author.id == context.author.id and m.channel.id == context.channel.id and m.content.startswith("`")
 
         while True:
             try:
-                response = await self.bot.wait_for(
-                    "message", check=check, timeout=10.0 * 60.0
-                )
+                response = await self.bot.wait_for("message", check=check, timeout=10.0 * 60.0)
             except asyncio.TimeoutError:
                 await context.send("Exiting REPL session.")
                 self.sessions.remove(context.channel.id)
@@ -438,9 +410,7 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
         fmt = f"```\n{render}\n```\n*Returned {plural(rows):row} in {dt:.2f}ms*"
         if len(fmt) > 2000:
             fp = io.BytesIO(fmt.encode("utf-8"))
-            await context.send(
-                "Too many results...", file=discord.File(fp, "results.txt")
-            )
+            await context.send("Too many results...", file=discord.File(fp, "results.txt"))
         else:
             await context.send(fmt)
 
@@ -462,9 +432,7 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
         message = f"```\n{render}\n```"
         if len(message) > 2000:
             fp = io.BytesIO(message.encode("utf-8"))
-            await context.send(
-                "Too many results...", file=discord.File(fp, "results.txt")
-            )
+            await context.send("Too many results...", file=discord.File(fp, "results.txt"))
         else:
             await context.send(message)
 
@@ -559,9 +527,7 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
             end = time.perf_counter()
             success = True
 
-        await context.send(
-            f"Status: {context.tick(success)} Time: {(end - start) * 1000:.2f}ms"
-        )
+        await context.send(f"Status: {context.tick(success)} Time: {(end - start) * 1000:.2f}ms")
 
 
 def setup(bot):

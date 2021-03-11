@@ -268,15 +268,7 @@ class JSONB(SQLType):
 
 
 class ForeignKey(SQLType):
-    def __init__(
-        self,
-        table,
-        column,
-        *,
-        sql_type=None,
-        on_delete="CASCADE",
-        on_update="NO ACTION"
-    ):
+    def __init__(self, table, column, *, sql_type=None, on_delete="CASCADE", on_update="NO ACTION"):
         if not table or not isinstance(table, str):
             raise SchemaError("missing table to reference (must be string)")
 
@@ -320,10 +312,7 @@ class ForeignKey(SQLType):
         return False
 
     def to_sql(self):
-        fmt = (
-            "{0.sql_type} REFERENCES {0.table} ({0.column})"
-            " ON DELETE {0.on_delete} ON UPDATE {0.on_update}"
-        )
+        fmt = "{0.sql_type} REFERENCES {0.table} ({0.column})" " ON DELETE {0.on_delete} ON UPDATE {0.on_update}"
         return fmt.format(self)
 
 
@@ -365,15 +354,7 @@ class Column:
     )
 
     def __init__(
-        self,
-        column_type,
-        *,
-        index=False,
-        primary_key=False,
-        nullable=True,
-        unique=False,
-        default=None,
-        name=None
+        self, column_type, *, index=False, primary_key=False, nullable=True, unique=False, default=None, name=None
     ):
 
         if inspect.isclass(column_type):
@@ -405,9 +386,7 @@ class Column:
 
     @property
     def _comparable_id(self):
-        return "-".join(
-            "%s:%s" % (attr, getattr(self, attr)) for attr in self.__slots__
-        )
+        return "-".join("%s:%s" % (attr, getattr(self, attr)) for attr in self.__slots__)
 
     def _to_dict(self):
         d = {attr: getattr(self, attr) for attr in self.__slots__}
@@ -495,17 +474,13 @@ class SchemaDiff:
 
             before_default, after_default = before.get("default"), after.get("default")
             if before_default is None and after_default is not None:
-                fmt = "ALTER COLUMN {0[name]} SET DEFAULT {1[default]}".format(
-                    constraints, after
-                )
+                fmt = "ALTER COLUMN {0[name]} SET DEFAULT {1[default]}".format(constraints, after)
                 sub_statements.append(fmt)
             elif before_default is not None and after_default is None:
                 fmt = "ALTER COLUMN {0[name]} DROP DEFAULT".format(constraints)
                 sub_statements.append(fmt)
 
-            before_nullable, after_nullable = before.get("nullable"), after.get(
-                "nullable"
-            )
+            before_nullable, after_nullable = before.get("nullable"), after.get("nullable")
             if not before_nullable and after_nullable:
                 fmt = "ALTER COLUMN {0[name]} DROP NOT NULL".format(constraints)
                 sub_statements.append(fmt)
@@ -684,15 +659,7 @@ class Table(metaclass=TableMeta):
         return False
 
     @classmethod
-    async def migrate(
-        cls,
-        *,
-        directory="migrations",
-        index=-1,
-        downgrade=False,
-        verbose=False,
-        connection=None
-    ):
+    async def migrate(cls, *, directory="migrations", index=-1, downgrade=False, verbose=False, connection=None):
         """Actually run the latest migration pointed by the data file.
 
         Parameters
@@ -739,14 +706,7 @@ class Table(metaclass=TableMeta):
             json.dump(cls.to_dict(), fp, indent=4, ensure_ascii=True)
 
     @classmethod
-    async def create(
-        cls,
-        *,
-        directory="migrations",
-        verbose=False,
-        connection=None,
-        run_migrations=True
-    ):
+    async def create(cls, *, directory="migrations", verbose=False, connection=None, run_migrations=True):
         """Creates the database and manages migrations, if any.
 
         Parameters
@@ -899,9 +859,7 @@ class Table(metaclass=TableMeta):
         # handle the index creations
         for column in cls.columns:
             if column.index:
-                fmt = "CREATE INDEX IF NOT EXISTS {1.index_name} ON {0} ({1.name});".format(
-                    cls.__tablename__, column
-                )
+                fmt = "CREATE INDEX IF NOT EXISTS {1.index_name} ON {0} ({1.name});".format(cls.__tablename__, column)
                 statements.append(fmt)
 
         return "\n".join(statements)
@@ -920,9 +878,7 @@ class Table(metaclass=TableMeta):
 
             check = column.column_type.python
             if value is None and not column.nullable:
-                raise TypeError(
-                    "Cannot pass None to non-nullable column %s." % column.name
-                )
+                raise TypeError("Cannot pass None to non-nullable column %s." % column.name)
             elif not check or not isinstance(value, check):
                 fmt = "column {0.name} expected {1.__name__}, received {2.__class__.__name__}"
                 raise TypeError(fmt.format(column, check, value))
@@ -1019,29 +975,17 @@ class Table(metaclass=TableMeta):
                 # check if we're dropping the index
                 if not a.index:
                     # we could also be renaming so make sure to use the old index name
-                    upgrade.setdefault("drop_index", []).append(
-                        {"name": a.name, "index": b.index_name}
-                    )
+                    upgrade.setdefault("drop_index", []).append({"name": a.name, "index": b.index_name})
                     # if we want to roll back, we need to re-add the old index to the old column name
-                    downgrade.setdefault("add_index", []).append(
-                        {"name": b.name, "index": b.index_name}
-                    )
+                    downgrade.setdefault("add_index", []).append({"name": b.name, "index": b.index_name})
                 else:
                     # we're not dropping an index, instead we're adding one
-                    upgrade.setdefault("add_index", []).append(
-                        {"name": a.name, "index": a.index_name}
-                    )
-                    downgrade.setdefault("drop_index", []).append(
-                        {"name": a.name, "index": a.index_name}
-                    )
+                    upgrade.setdefault("add_index", []).append({"name": a.name, "index": a.index_name})
+                    downgrade.setdefault("drop_index", []).append({"name": a.name, "index": a.index_name})
 
         def insert_column_diff(a, b):
             if a.column_type != b.column_type:
-                if (
-                    a.name == b.name
-                    and a.column_type.is_real_type()
-                    and b.column_type.is_real_type()
-                ):
+                if a.name == b.name and a.column_type.is_real_type() and b.column_type.is_real_type():
                     upgrade.setdefault("changed_column_types", []).append(
                         {"name": a.name, "type": a.column_type.to_sql()}
                     )
@@ -1058,12 +1002,8 @@ class Table(metaclass=TableMeta):
                     return
 
             elif a._is_rename(b):
-                upgrade.setdefault("rename_columns", []).append(
-                    {"before": b.name, "after": a.name}
-                )
-                downgrade.setdefault("rename_columns", []).append(
-                    {"before": a.name, "after": b.name}
-                )
+                upgrade.setdefault("rename_columns", []).append({"before": b.name, "after": a.name})
+                downgrade.setdefault("rename_columns", []).append({"before": a.name, "after": b.name})
 
             # technically, adding UNIQUE or PRIMARY KEY is rather simple and straight forward
             # however, since the inverse is a little bit more complicated (you have to remove
@@ -1112,20 +1052,14 @@ class Table(metaclass=TableMeta):
                 insert_column_diff(a, b)
 
             new_columns = self.columns[len(before.columns) :]
-            add, remove = upgrade.setdefault("add_columns", []), downgrade.setdefault(
-                "remove_columns", []
-            )
+            add, remove = upgrade.setdefault("add_columns", []), downgrade.setdefault("remove_columns", [])
             for column in new_columns:
                 as_dict = column._to_dict()
                 add.append(as_dict)
                 remove.append(as_dict)
                 if column.index:
-                    upgrade.setdefault("add_index", []).append(
-                        {"name": column.name, "index": column.index_name}
-                    )
-                    downgrade.setdefault("drop_index", []).append(
-                        {"name": column.name, "index": column.index_name}
-                    )
+                    upgrade.setdefault("add_index", []).append({"name": column.name, "index": column.index_name})
+                    downgrade.setdefault("drop_index", []).append({"name": column.name, "index": column.index_name})
 
         elif len(self.columns) < len(before.columns):
             # check if we have fewer columns

@@ -34,9 +34,7 @@ class SubredditManagement(CommandCog):
         """
         if None in [subreddit, mod_account]:
             return
-        results = parse_sql(
-            await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit)
-        )
+        results = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit))
         if results:
             confirm = await context.prompt(
                 f"r/{subreddit} is already added. Do you want to overwrite it?",
@@ -48,13 +46,8 @@ class SubredditManagement(CommandCog):
         try:
             reddit: praw.Reddit = self.bot.credmgr_bot.redditApp.reddit(mod_account)
             current_scopes = reddit.auth.scopes()
-            if (
-                not set(required_scopes).issubset(current_scopes)
-                and "*" not in current_scopes
-            ):
-                auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(
-                    required_scopes, True
-                )
+            if not set(required_scopes).issubset(current_scopes) and "*" not in current_scopes:
+                auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(required_scopes, True)
                 confirm = await context.prompt(
                     f"My authorization for u/{mod_account} is not valid. I will need you to reauthorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
                     delete_after=True,
@@ -91,16 +84,11 @@ class SubredditManagement(CommandCog):
             await self.error_embed(context, f"Failed to add r/{subreddit}.")
 
     async def verify_valid_auth(self, context, mod_account, required_scopes):
-        final_failed_message = (
-            "Authorization failed. Please try again or contact <@393801572858986496>."
-        )
+        final_failed_message = "Authorization failed. Please try again or contact <@393801572858986496>."
         try:
             reddit: praw.Reddit = self.bot.credmgr_bot.redditApp.reddit(mod_account)
             current_scopes = reddit.auth.scopes()
-            if (
-                not set(required_scopes).issubset(current_scopes)
-                and "*" not in current_scopes
-            ):
+            if not set(required_scopes).issubset(current_scopes) and "*" not in current_scopes:
                 await self.error_embed(context, final_failed_message)
                 return False
             else:

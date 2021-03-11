@@ -8,11 +8,7 @@ class DiscordBotCommand(Command):
         super().__init__(callback, **kwargs)
 
         if sys.platform == "darwin":
-            self.aliases += [
-                f"{alias}2"
-                for alias in self.aliases[:] + [self.name]
-                if not f"{alias}2" in self.aliases
-            ]
+            self.aliases += [f"{alias}2" for alias in self.aliases[:] + [self.name] if not f"{alias}2" in self.aliases]
 
 
 def command(name=None, cls=None, **attrs):

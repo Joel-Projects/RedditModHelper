@@ -27,37 +27,27 @@ class CommandCog(commands.Cog):
         super().__init__()
 
     @staticmethod
-    async def cancelledEmbed(context, message):
+    async def cancelled_embed(context, message):
         embed = Embed(color=discord.Color.greyple())
         embed.title = f"Cancelled"
         embed.description = message
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         await context.send(embed=embed)
 
     @staticmethod
-    async def error_embed(context, message):
-        embed = Embed(
-            title="Command Error", color=discord.Color.red(), description=message
-        )
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
-        return await context.send(embed=embed)
+    async def error_embed(context, message, delete_after=None):
+        embed = Embed(title="Command Error", color=discord.Color.red(), description=message)
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
+        return await context.send(embed=embed, delete_after=delete_after)
 
     @staticmethod
     async def status_done_embed(msg, message, *fields):
         if msg and msg.embeds:
             oldEmbed: Embed = msg.embeds[0]
-            embed = Embed(
-                title=oldEmbed.title, description=message, color=discord.Color.green()
-            )
+            embed = Embed(title=oldEmbed.title, description=message, color=discord.Color.green())
         else:
             embed = Embed(color=discord.Color.green(), description=message)
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         embed.clear_fields()
         for field in fields:
             embed.add_field(**field)
@@ -67,9 +57,7 @@ class CommandCog(commands.Cog):
     @staticmethod
     async def status_embed(context, message, title="Status", *fields):
         embed = Embed(title=title, description=message, color=discord.Color.orange())
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         for field in fields:
             embed.add_field(**field)
         msg = await context.send(embed=embed)
@@ -79,14 +67,10 @@ class CommandCog(commands.Cog):
     async def status_update_embed(msg, message, *fields):
         if msg and msg.embeds:
             oldEmbed: Embed = msg.embeds[0]
-            embed = Embed(
-                title=oldEmbed.title, description=message, color=discord.Color.orange()
-            )
+            embed = Embed(title=oldEmbed.title, description=message, color=discord.Color.orange())
         else:
             embed = Embed(color=discord.Color.orange(), description=message)
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         embed.clear_fields()
         for field in fields:
             embed.add_field(**field)
@@ -99,19 +83,13 @@ class CommandCog(commands.Cog):
             embed = message
         else:
             embed = Embed(title=title, color=discord.Color.green(), description=message)
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         return await context.send(embed=embed)
 
     @staticmethod
     async def warning_embed(context, message):
-        embed = Embed(
-            title="Warning", color=discord.Color.orange(), description=message
-        )
-        embed.set_footer(
-            text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-        )
+        embed = Embed(title="Warning", color=discord.Color.orange(), description=message)
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         return await context.send(embed=embed)
 
     async def check_multiple_auth(self, context, item_name, items, allowed_items=None):
@@ -136,13 +114,9 @@ class CommandCog(commands.Cog):
                 if context.author in authorized_users:
                     return items
                 else:
-                    await self.error_embed(
-                        context, f"Only admins can specify {item_name}."
-                    )
+                    await self.error_embed(context, f"Only admins can specify {item_name}.")
             elif items[0] not in allowed_items:
-                await self.error_embed(
-                    context, f"Only admins can specify other {item_name}."
-                )
+                await self.error_embed(context, f"Only admins can specify other {item_name}.")
             return
 
     async def get_and_calculate_subs(self, user):
@@ -164,11 +138,11 @@ class CommandCog(commands.Cog):
                 moderated = moderated["data"]
         subreddits = [(i["display_name"], i["subscribers"]) for i in moderated]
         subscribers = sum([subreddit[1] for subreddit in subreddits])
-        subCount = len(subreddits)
+        sub_count = len(subreddits)
         zeroCount = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 0])
         remaining = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 1])
         subAverage = int(round(subscribers / len(subreddits))) if subreddits else 0
-        return remaining, subAverage, subCount, subreddits, subscribers, zeroCount
+        return remaining, subAverage, sub_count, subreddits, subscribers, zeroCount
 
     async def get_authorized_user(self, context):
         results = await self.sql.fetch(
@@ -182,9 +156,7 @@ class CommandCog(commands.Cog):
             return None
 
     async def get_bot_config(self, key):
-        results = parse_sql(
-            await self.bot.pool.fetch("SELECT * FROM settings WHERE key=$1", key)
-        )
+        results = parse_sql(await self.bot.pool.fetch("SELECT * FROM settings WHERE key=$1", key))
         if len(results) > 0:
             return json.loads(results[0].value)["value"]
         else:
@@ -211,9 +183,7 @@ class CommandCog(commands.Cog):
                 await self.error_embed(context, f"r/{sub} does not exist.")
 
     async def get_sub_from_channel(self, context):
-        results = await self.sql.fetch(
-            "SELECT name FROM subreddits WHERE channel_id=$1", context.channel.id
-        )
+        results = await self.sql.fetch("SELECT name FROM subreddits WHERE channel_id=$1", context.channel.id)
         results = parse_sql(results)
         if results:
             return results[0][0]
@@ -282,9 +252,7 @@ class CommandCog(commands.Cog):
                 else:
                     if " " in content:
                         self.toDelete.append(
-                            self.bot.loop.create_task(
-                                self.error_embed(context, "Please choose one option")
-                            )
+                            self.bot.loop.create_task(self.error_embed(context, "Please choose one option"))
                         )
                     else:
                         if content.isdigit():
@@ -305,12 +273,8 @@ class CommandCog(commands.Cog):
                 return False
 
         try:
-            replyMessage = await self.bot.wait_for(
-                "message", check=messageCheck, timeout=timeout
-            )
-            if any(
-                [i in replyMessage.content.lower() for i in ["q", "quit", "s", "stop"]]
-            ):
+            replyMessage = await self.bot.wait_for("message", check=messageCheck, timeout=timeout)
+            if any([i in replyMessage.content.lower() for i in ["q", "quit", "s", "stop"]]):
                 return
             content = replyMessage.content
         except asyncio.TimeoutError:
@@ -338,10 +302,6 @@ class CommandCog(commands.Cog):
             else:
                 insert.append(data)
         if update:
-            await self.bot.pool.executemany(
-                "UPDATE settings SET value=$2 WHERE key=$1", update
-            )
+            await self.bot.pool.executemany("UPDATE settings SET value=$2 WHERE key=$1", update)
         if insert:
-            await self.bot.pool.executemany(
-                "INSERT INTO settings (key, value) VALUES ($1, $2)", insert
-            )
+            await self.bot.pool.executemany("INSERT INTO settings (key, value) VALUES ($1, $2)", insert)

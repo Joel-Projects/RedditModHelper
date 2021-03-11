@@ -69,9 +69,7 @@ class Context(commands.Context):
             return msg.author.id == self.author.id and self.channel == msg.channel
 
         try:
-            answer: discord.Message = await self.bot.wait_for(
-                "message", check=message_check, timeout=30.0
-            )
+            answer: discord.Message = await self.bot.wait_for("message", check=message_check, timeout=30.0)
             if answer:
                 if answer.content.lower() == "!c":
                     raise asyncio.CancelledError
@@ -86,21 +84,11 @@ class Context(commands.Context):
         if len(matches) == 1:
             return matches[0]
 
-        await self.send(
-            "There are too many matches... Which one did you mean? **Only say the number**."
-        )
-        await self.send(
-            "\n".join(
-                f"{index}: {entry(item)}" for index, item in enumerate(matches, 1)
-            )
-        )
+        await self.send("There are too many matches... Which one did you mean? **Only say the number**.")
+        await self.send("\n".join(f"{index}: {entry(item)}" for index, item in enumerate(matches, 1)))
 
         def check(m):
-            return (
-                m.content.isdigit()
-                and m.author.id == self.author.id
-                and m.channel.id == self.channel.id
-            )
+            return m.content.isdigit() and m.author.id == self.author.id and m.channel.id == self.channel.id
 
         await self.release()
 
@@ -108,9 +96,7 @@ class Context(commands.Context):
         try:
             for i in range(3):
                 try:
-                    message = await self.bot.wait_for(
-                        "message", check=check, timeout=30.0
-                    )
+                    message = await self.bot.wait_for("message", check=check, timeout=30.0)
                 except asyncio.TimeoutError:
                     raise ValueError("Took too long. Goodbye.")
 
@@ -118,9 +104,7 @@ class Context(commands.Context):
                 try:
                     return matches[index - 1]
                 except:
-                    await self.send(
-                        f"Please give me a valid number. {2 - i} tries remaining..."
-                    )
+                    await self.send(f"Please give me a valid number. {2 - i} tries remaining...")
 
             raise ValueError("Too many tries. Goodbye.")
         finally:
@@ -176,9 +160,7 @@ class Context(commands.Context):
                 embed = Embed(title="Confirmation Needed")
             embed.color = color
             embed.description = fmt
-            embed.set_footer(
-                text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime())
-            )
+            embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
             msg = await self.send(embed=embed)
         else:
             msg = await self.send(fmt)
@@ -225,11 +207,7 @@ class Context(commands.Context):
                 return confirm
 
     def tick(self, opt, label=None):
-        emoji = (
-            "<:greenTick:646449055005671444>"
-            if opt
-            else "<:redTick:646449054946951194>"
-        )
+        emoji = "<:greenTick:646449055005671444>" if opt else "<:redTick:646449054946951194>"
         if label is not None:
             return f"{emoji}: {label}"
         return emoji
@@ -296,8 +274,6 @@ class Context(commands.Context):
         if len(content) > 2000:
             fp = io.BytesIO(content.encode())
             kwargs.pop("file", None)
-            return await self.send(
-                file=discord.File(fp, filename="message_too_long.txt"), **kwargs
-            )
+            return await self.send(file=discord.File(fp, filename="message_too_long.txt"), **kwargs)
         else:
             return await self.send(content)

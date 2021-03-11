@@ -15,9 +15,7 @@ async def check_permissions(context, perms, *, check=all):
         return True
 
     resolved = context.channel.permissions_for(context.author)
-    return check(
-        getattr(resolved, name, None) == value for name, value in perms.items()
-    )
+    return check(getattr(resolved, name, None) == value for name, value in perms.items())
 
 
 def has_permissions(*, check=all, **perms):
@@ -28,17 +26,14 @@ def has_permissions(*, check=all, **perms):
 
 
 async def check_guild_permissions(context, perms, *, check=all):
-    is_owner = await context.bot.is_owner(context.author)
-    if is_owner:
+    if await context.bot.is_owner(context.author):
         return True
 
     if context.guild is None:
         return False
 
     resolved = context.author.guild_permissions
-    return check(
-        getattr(resolved, name, None) == value for name, value in perms.items()
-    )
+    return check(getattr(resolved, name, None) == value for name, value in perms.items())
 
 
 def has_guild_permissions(*, check=all, **perms):

@@ -93,9 +93,7 @@ def db():
     pass
 
 
-@db.command(
-    short_help="initializes the databases for the bot", options_metavar="[options]"
-)
+@db.command(short_help="initializes the databases for the bot", options_metavar="[options]")
 @click.argument("cogs", nargs=-1, metavar="[cogs]")
 @click.option("-q", "--quiet", help="less verbose output", is_flag=True)
 def init(cogs, quiet):
@@ -138,9 +136,7 @@ def init(cogs, quiet):
             if created:
                 click.echo(f"[{table.__module__}] Created {table.__tablename__}.")
             else:
-                click.echo(
-                    f"[{table.__module__}] No work needed for {table.__tablename__}."
-                )
+                click.echo(f"[{table.__module__}] No work needed for {table.__tablename__}.")
 
 
 @db.command(short_help="migrates the databases")
@@ -171,9 +167,7 @@ def migrate(context, cog, quiet):
             sys.exit(-1)
         else:
             if actually_migrated:
-                click.echo(
-                    f"Successfully updated migrations for {table.__tablename__}."
-                )
+                click.echo(f"Successfully updated migrations for {table.__tablename__}.")
             else:
                 click.echo(f"Found no changes for {table.__tablename__}.")
 
@@ -207,9 +201,7 @@ async def apply_migration(cog, quiet, index, *, downgrade=False):
         await tr.start()
         for table in Table.all_tables():
             try:
-                await table.migrate(
-                    index=index, downgrade=downgrade, verbose=not quiet, connection=con
-                )
+                await table.migrate(index=index, downgrade=downgrade, verbose=not quiet, connection=con)
             except RuntimeError as e:
                 click.echo(f"Could not migrate {table.__tablename__}: {e}", err=True)
                 await tr.rollback()

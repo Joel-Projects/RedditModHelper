@@ -21,9 +21,7 @@ class RoboPages(menus.MenuPages):
     @menus.button("\N{INFORMATION SOURCE}\ufe0f", position=menus.Last(3))
     async def show_help(self, payload):
         """shows this message"""
-        embed = discord.Embed(
-            title="Paginator help", description="Hello! Welcome to the help page."
-        )
+        embed = discord.Embed(title="Paginator help", description="Hello! Welcome to the help page.")
         messages = []
         for (emoji, button) in self.buttons.items():
             messages.append(f"{emoji}: {button.action.__doc__}")
@@ -33,9 +31,7 @@ class RoboPages(menus.MenuPages):
             value="\n".join(messages),
             inline=False,
         )
-        embed.set_footer(
-            text=f"We were on page {self.current_page + 1} before this message."
-        )
+        embed.set_footer(text=f"We were on page {self.current_page + 1} before this message.")
         await self.message.edit(content=None, embed=embed)
 
         async def go_back_to_current_page():
@@ -53,11 +49,7 @@ class RoboPages(menus.MenuPages):
         to_delete.append(await channel.send("What page do you want to go to?"))
 
         def message_check(m):
-            return (
-                m.author.id == author_id
-                and channel == m.channel
-                and m.content.isdigit()
-            )
+            return m.author.id == author_id and channel == m.channel and m.content.isdigit()
 
         try:
             msg = await self.bot.wait_for("message", check=message_check, timeout=30.0)
@@ -91,9 +83,7 @@ class FieldPageSource(menus.ListPageSource):
 
         maximum = self.get_max_pages()
         if maximum > 1:
-            text = (
-                f"Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)"
-            )
+            text = f"Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)"
             self.embed.set_footer(text=text)
 
         return self.embed
@@ -126,9 +116,7 @@ class SimplePageSource(menus.ListPageSource):
 
         maximum = self.get_max_pages()
         if maximum > 1:
-            footer = (
-                f"Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)"
-            )
+            footer = f"Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)"
             menu.embed.set_footer(text=footer)
 
         if self.initial_page and self.is_paginating():
