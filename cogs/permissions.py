@@ -83,15 +83,15 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     def has_roles(func, roles, *roles_to_check):
         return func([role in roles for role in roles_to_check])
 
-    async def action_user(self, context, member, action):
+    async def action_user(self, context, member, action, grandfathered=False):
         user_info = await self.get_user(context.guild, member.id)
         if user_info:
             if user_info.status in ["approved", "denied"]:
-                actor, timestamp = await self.get_actor_for_member(member.id, True)
+                actor, timestamp = await self.get_actor_for_member(member.id)
                 if isinstance(actor, discord.Member):
                     note = f"{actor.name}#{actor.discriminator} ({actor.mention})"
                 elif isinstance(actor, int):
-                    note = f"<@{actor}>"
+                    note = 'grandfather' if actor == 0 else f"<@{actor}>"
                 else:
                     note = f"someone"
                 confirm = await context.prompt(
@@ -101,7 +101,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                     return
         if action in ["approve", "deny"]:
             if action == "approve":
-                await self.approve_user(member)
+                await self.approve_user(member, grandfathered)
             elif action == "deny":
                 if isinstance(member, discord.Member):
                     if not self.bot.debug:
@@ -123,7 +123,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             await self.sql.execute(
                 "INSERT INTO approval_log (user_id, actor_id, action_type, channel_id, message_id) VALUES ($1, $2, $3, $4, $5)",
                 member.id,
-                context.author.id,
+                0 if grandfathered else context.author.id,
                 action,
                 context.channel.id,
                 context.message.id,
@@ -143,7 +143,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             failed_users = "\n".join([user.arg for user in failed])
             await self.error_embed(context, f"Could not find the following users:\n\n{failed_users}")
 
-    async def approve_user(self, member, send_embed=True):
+    async def approve_user(self, member, send_embed=True, grandfathered=False):
         if isinstance(member, discord.Member):
             roles_to_add = [self.approved_role]
             redditor = await self.get_redditor(None, member)
@@ -165,7 +165,8 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             await member.add_roles(*roles_to_add)
             await member.remove_roles(self.unverified_role, self.unapproved_role, self.grandfather_role)
         if send_embed:
-            await self.success_embed(self.approval_channel, f"Successfully approved {member.mention}!")
+            note = '\nNote: This user was grandfathered in.' if grandfathered else ''
+            await self.success_embed(self.approval_channel, f"Successfully approved {member.mention}!{note}")
 
     async def check_existing_status(self, action, context, redditor):
         result = await self.sql.fetchval(
@@ -214,8 +215,19 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                         return False
         return True
 
+    async def check_pre_redditor(self, user):
+        results = parse_sql(await self.sql.fetch("SELECT * FROM pre_redditors WHERE redditor=$1", user))
+        if results:
+            result = results[0]
+            status = result.status
+            actor = self.bot.snoo_guild.get_member(result.actor_id) or result.actor_id
+            timestamp = result.timestamp.astimezone().strftime(TIME_FORMAT)
+            return status, actor, timestamp
+        else:
+            return [None] * 3
+
     async def deny_user(self, member):
-        actor, timestamp = await self.get_actor_for_member(member.id, True)
+        actor, timestamp = await self.get_actor_for_member(member.id)
         if not self.bot.debug and self.auto_kick:
             if isinstance(actor, discord.Member):
                 await member.kick(reason=f"Previously denied by {actor.name}#{actor.discriminator} ({actor.id})")
@@ -241,7 +253,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 )
                 return preemptive_status
 
-    async def get_actor_for_member(self, member_id, return_actor_id_not_found=False):
+    async def get_actor_for_member(self, member_id):
         logs = parse_sql(
             await self.sql.fetch(
                 "SELECT * FROM approval_log WHERE user_id=$1 ORDER BY actioned_at DESC LIMIT 1",
@@ -253,7 +265,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 logs[0].actor_id,
             )
             if not actor:
-                actor = logs[0].actor_id if return_actor_id_not_found else None
+                actor = logs[0].actor_id
         else:
             return None, None
         return actor, logs[0].actioned_at.astimezone().strftime(TIME_FORMAT)
@@ -393,11 +405,11 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             actor = None
             timestamp = None
             if result.status in ["approved", "denied"]:
-                actor, timestamp = await self.get_actor_for_member(member.id, True)
+                actor, timestamp = await self.get_actor_for_member(member.id)
                 if isinstance(actor, discord.Member):
                     actor = f"{actor.name}#{actor.discriminator} ({actor.mention})"
                 elif isinstance(actor, int):
-                    actor = f"<@{actor}>"
+                    actor = 'grandfather' if actor == 0 else f"<@{actor}>"
                 else:
                     actor = f"someone"
                 previous_action = result.status
@@ -698,7 +710,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                             except Exception:
                                 pass
                             if self.grandfather_role in member.roles:
-                                await self.action_user(context, member, "approve")
+                                await self.action_user(context, member, "approve", True)
                                 await self.success_embed(
                                     context,
                                     f"Verified u/{redditor} successfully!",
@@ -868,17 +880,6 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         """
         for user in usernames:
             await self.pre_action_user(context, user, "approved")
-
-    async def check_pre_redditor(self, user):
-        results = parse_sql(await self.sql.fetch("SELECT * FROM pre_redditors WHERE redditor=$1", user))
-        if results:
-            result = results[0]
-            status = result.status
-            actor = self.bot.snoo_guild.get_member(result.actor_id) or result.actor_id
-            timestamp = result.timestamp.astimezone().strftime(TIME_FORMAT)
-            return status, actor, timestamp
-        else:
-            return [None] * 3
 
 
 def setup(bot):
