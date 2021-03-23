@@ -5,7 +5,7 @@ from inspect import getfullargspec
 from typing import NamedTuple
 
 
-def genDateString(epoch=time.time(), gmtime=False, format="%B %d, %Y at %I:%M:%S %p %Z"):
+def gen_date_string(epoch=time.time(), gmtime=False, format="%B %d, %Y at %I:%M:%S %p %Z"):
     if not gmtime:
         return time.strftime(format, time.localtime(epoch))
     else:

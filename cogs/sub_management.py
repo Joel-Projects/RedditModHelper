@@ -2,10 +2,25 @@ import credmgr
 import discord
 import praw
 
+from .utils import db
 from .utils.command_cog import CommandCog
 from .utils.commands import command
 from .utils.converters import RedditorConverter, SubredditConverter
 from .utils.utils import parse_sql
+
+
+class Subreddits(db.Table, table_name="subreddits"):
+    name = db.Column(db.String, primary_key=True, unique=True, nullable=False)
+    mod_role = db.Column(db.Integer(big=True), nullable=False)
+    channel_id = db.Column(db.Integer(big=True), nullable=False)
+    modlog_account = db.Column(db.String, nullable=False)
+    alert_channel_id = db.Column(db.Integer(big=True))
+
+
+class Webhooks(db.Table, table_name="webhooks"):
+    subreddit = db.Column(db.String, primary_key=True, unique=True, nullable=False)
+    admin_webhook = db.Column(db.String)
+    alert_webhook = db.Column(db.String)
 
 
 class SubredditManagement(CommandCog):
@@ -18,7 +33,7 @@ class SubredditManagement(CommandCog):
         subreddit: SubredditConverter,
         mod_role: discord.Role,
         channel: discord.TextChannel,
-        mod_account: RedditorConverter,
+        mod_account: RedditorConverter = None,
         alert_channel: discord.TextChannel = None,
     ):
         """Adds a subreddit to the bot.
@@ -68,6 +83,63 @@ class SubredditManagement(CommandCog):
         if not await self.verify_valid_auth(context, mod_account, required_scopes):
             return
         if alert_channel:
+            with open("redditadmin.png", "rb") as file:
+                admin_avatar = file.read()
+            with open("redditmod.png", "rb") as file:
+                mod_avatar = file.read()
+            sub = await self.reddit.subreddit(subreddit, fetch=True)
+            if sub.icon_img:
+                try:
+                    response = await self.bot.session.get(sub.icon_img)
+                    mod_avatar_temp = await response.read()
+                    mod_avatar = mod_avatar_temp or mod_avatar
+                except Exception:
+                    pass
+            mapping = {"admin_webhook": "Admin Action Alert", "alert_webhook": "Subreddit Alert"}
+            webhook_names = ["admin_webhook", "alert_webhook"]
+            results = parse_sql(await self.sql.fetch("SELECT * FROM webhooks WHERE subreddit=$1", subreddit))
+            webhooks = {}
+            channel_webhooks = await context.channel.webhooks()
+            if results:
+                result = results[0]
+                for webhook_name in webhook_names:
+                    webhook_url = getattr(result, webhook_name)
+                    if webhook_url:
+                        webhook = discord.Webhook.from_url(
+                            url=webhook_url, adapter=discord.AsyncWebhookAdapter(self.bot.session)
+                        )
+                        if webhook not in channel_webhooks:
+                            webhooks[webhook_name] = await alert_channel.create_webhook(
+                                name=mapping[webhook_name],
+                                avatar=mod_avatar if webhook_name == "alert_webhook" else admin_avatar,
+                            )
+                    else:
+                        webhooks[webhook_name] = await alert_channel.create_webhook(
+                            name=mapping[webhook_name],
+                            avatar=mod_avatar if webhook_name == "alert_webhook" else admin_avatar,
+                        )
+                if webhooks:
+                    admin_webhook = webhooks.get("admin_webhook", None)
+                    if admin_webhook:
+                        admin_webhook = admin_webhook.url
+                    alert_webhook = webhooks.get("alert_webhook", None)
+                    if alert_webhook:
+                        alert_webhook = alert_webhook.url
+                    await self.sql.execute(
+                        "UPDATE webhooks SET admin_webhook=$1, alert_webhook=$2 WHERE subreddit=$3",
+                        admin_webhook,
+                        alert_webhook,
+                        subreddit,
+                    )
+            else:
+                admin_webhook = await alert_channel.create_webhook(name=mapping["admin_webhook"], avatar=admin_avatar)
+                alert_webhook = await alert_channel.create_webhook(name=mapping["alert_webhook"], avatar=mod_avatar)
+                await self.sql.execute(
+                    "INSERT INTO webhooks (subreddit, admin_webhook, alert_webhook) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                    subreddit,
+                    admin_webhook.url,
+                    alert_webhook.url,
+                )
             alert_channel = alert_channel.id
         try:
             await self.sql.execute(

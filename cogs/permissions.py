@@ -2,9 +2,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-import asyncprawcore
 import discord
-from asyncpg import UniqueViolationError
 from discord.ext.commands import Cog, Context
 
 from .utils import checks, db
@@ -91,7 +89,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 if isinstance(actor, discord.Member):
                     note = f"{actor.name}#{actor.discriminator} ({actor.mention})"
                 elif isinstance(actor, int):
-                    note = 'grandfather' if actor == 0 else f"<@{actor}>"
+                    note = "grandfather" if actor == 0 else f"<@{actor}>"
                 else:
                     note = f"someone"
                 confirm = await context.prompt(
@@ -165,7 +163,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             await member.add_roles(*roles_to_add)
             await member.remove_roles(self.unverified_role, self.unapproved_role, self.grandfather_role)
         if send_embed:
-            note = '\nNote: This user was grandfathered in.' if grandfathered else ''
+            note = "\nNote: This user was grandfathered in." if grandfathered else ""
             await self.success_embed(self.approval_channel, f"Successfully approved {member.mention}!{note}")
 
     async def check_existing_status(self, action, context, redditor):
@@ -409,7 +407,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 if isinstance(actor, discord.Member):
                     actor = f"{actor.name}#{actor.discriminator} ({actor.mention})"
                 elif isinstance(actor, int):
-                    actor = 'grandfather' if actor == 0 else f"<@{actor}>"
+                    actor = "grandfather" if actor == 0 else f"<@{actor}>"
                 else:
                     actor = f"someone"
                 previous_action = result.status

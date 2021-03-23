@@ -22,15 +22,13 @@ import pytz
 import urllib3
 from discord import Embed
 
-from .utils import db
 from .utils.command_cog import CommandCog
 from .utils.commands import command
 from .utils.context import Context
-from .utils.utils import genDateString, ordinal, parse_sql
+from .utils.utils import gen_date_string, ordinal, parse_sql
 
 
 def parseDate(date: str = None):
-
     settings = dateparser.conf.Settings()
     settings.PREFER_DAY_OF_MONTH = "first"
     settings.RETURN_AS_TIMEZONE_AWARE = True
@@ -41,14 +39,6 @@ def parseDate(date: str = None):
         return parsedDate
     except Exception:
         return
-
-
-class Subreddits(db.Table, table_name="subreddits"):
-    name = db.Column(db.String, primary_key=True, unique=True, nullable=False)
-    mod_role = db.Column(db.Integer(big=True), nullable=False)
-    channel_id = db.Column(db.Integer(big=True), nullable=False)
-    modlog_account = db.Column(db.String, nullable=False)
-    alert_channel_id = db.Column(db.Integer(big=True))
 
 
 class RedditStats(CommandCog):
@@ -429,19 +419,19 @@ class RedditStats(CommandCog):
             if subResults["isMod"]:
                 traffic = await sub.traffic()
                 for day in traffic["day"]:
-                    date = genDateString(day[0], True, "%m/%d/%Y")
+                    date = gen_date_string(day[0], True, "%m/%d/%Y")
                     daystr += f"\n{date},{day[1]},{day[2]},{day[3]}"
                 with open(f"Daily Traffic Stats for pics.csv", "w") as csv:
                     csv.write(daystr)
 
                 for hour in traffic["hour"]:
-                    date = genDateString(hour[0], True, "%m/%d/%Y %I %p %Z")
+                    date = gen_date_string(hour[0], True, "%m/%d/%Y %I %p %Z")
                     hourstr += f"\n{date},{hour[1]},{hour[2]}"
                 with open(f"Hourly Traffic Stats for pics.csv", "w") as csv:
                     csv.write(hourstr)
 
                 for month in traffic["month"]:
-                    date = genDateString(month[0], True, "%B %Y")
+                    date = gen_date_string(month[0], True, "%B %Y")
                     monthstr += f"\n{date},{month[1]},{month[2]}"
                 with open(f"Monthly Traffic Stats for pics.csv", "w") as csv:
                     csv.write(monthstr)

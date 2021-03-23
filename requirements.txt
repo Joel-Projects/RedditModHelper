@@ -19,3 +19,7 @@ aiohttp
 discord
 matplotlib
 dataframe_image
+celery[redis]
+colorlog
+SQLAlchemy
+pylibmc
