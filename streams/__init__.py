@@ -64,7 +64,7 @@ def setup_task_logger(logger, *args, **kwargs):
         handler.setFormatter(formatter)
 
 
-cache = Client(["localhost"])
+cache = Client(["127.0.0.1"])
 
 params = services._getDbConnectionSettings()
 url = f"postgresql://{params['user']}:{params['password']}@{params['host']}:{params['port']}/{params['database']}"

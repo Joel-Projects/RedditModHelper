@@ -24,14 +24,13 @@ class ModLogStreams:
             for action in modlog:
                 try:
                     data = map_values(action.__dict__, mapping, skip_keys)
-                    result = ingest_action.delay(action, admin, stream)
-                    status = "New" if getattr(result, "result", None) == "insert" else "Old"
+                    ingest_action.delay(action, admin, stream)
+                    status = "New" if stream else "Old"
                     if not stream:
                         status = f"Past {status.lower}"
-                    getattr(log, "info" if status == "New" else "debug")(
+                    log.debug(
                         f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
                     )
-                    result.forget()
                 except Exception as error:
                     log.exception(error)
 

@@ -20,7 +20,7 @@ app = Celery(
 app.config_from_object("streams.celery_config")
 
 
-@app.task(bind=True, task_cls=LogDBTask)
+@app.task(bind=True, task_cls=LogDBTask, ignore_result=True)
 def ingest_action(self, action, admin, is_stream):
     modlog_item = None
     try:
@@ -44,7 +44,6 @@ def ingest_action(self, action, admin, is_stream):
     except Exception as error:
         log.exception(error)
         # TODO: maybe retry here
-    return modlog_item.query_action if modlog_item else "update"
 
 
 @app.task(ignore_result=True)
