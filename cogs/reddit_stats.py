@@ -24,8 +24,9 @@ from discord import Embed
 from discord_slash.utils.manage_commands import create_option
 
 from .utils.command_cog import CommandCog
-from .utils.commands import cog_slash, command
+from .utils.commands import command
 from .utils.context import Context
+from .utils.slash import cog_slash
 from .utils.utils import gen_date_string, ordinal, parse_sql
 
 
@@ -165,7 +166,6 @@ class RedditStats(CommandCog):
         start_date, end_date = await self.validate_dates(context, start_date, end_date)
         if start_date and end_date:
             embed = await self.generate_date_embed(start_date, end_date)
-            self.log.info("defer")
             await context.defer(embed=embed)
             subreddit = await self.get_sub_from_channel(context)
             if subreddit:

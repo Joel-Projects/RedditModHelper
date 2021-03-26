@@ -6,8 +6,8 @@ from discord_slash.utils.manage_commands import create_option
 
 from .utils import db
 from .utils.command_cog import CommandCog
-from .utils.commands import cog_slash
 from .utils.converters import RedditorConverter, SubredditConverter
+from .utils.slash import cog_slash
 from .utils.utils import parse_sql
 
 

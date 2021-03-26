@@ -9,8 +9,9 @@ from discord_slash.utils.manage_commands import create_option
 from .utils import checks, db
 from .utils import time as utime
 from .utils.command_cog import CommandCog
-from .utils.commands import cog_slash, command
+from .utils.commands import command
 from .utils.converters import NotFound, RedditorConverter, UserIDConverter
+from .utils.slash import cog_slash
 from .utils.utils import parse_sql
 
 TIME_FORMAT = "%B %d, %Y at %I:%M:%S %p %Z"
