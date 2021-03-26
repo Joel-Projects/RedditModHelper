@@ -1,8 +1,20 @@
 import asyncio
+import os
 import time
 from functools import wraps
 from inspect import getfullargspec
 from typing import NamedTuple
+
+import pytz
+from tzlocal import get_localzone
+
+os.environ["TZ"] = "America/Chicago"
+time.tzset()
+local_tz = get_localzone()
+
+
+def utc_to_local(utc_dt):
+    return utc_dt.replace(tzinfo=pytz.utc).astimezone(local_tz)
 
 
 def gen_date_string(epoch=time.time(), gmtime=False, format="%B %d, %Y at %I:%M:%S %p %Z"):

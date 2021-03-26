@@ -41,6 +41,12 @@ class CommandCog(commands.Cog):
         return await context.send(embed=embed, delete_after=delete_after)
 
     @staticmethod
+    def generate_error_embed(message):
+        embed = Embed(title="Command Error", color=discord.Color.red(), description=message)
+        embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
+        return embed
+
+    @staticmethod
     async def status_done_embed(msg, message, *fields):
         if msg and msg.embeds:
             oldEmbed: Embed = msg.embeds[0]
@@ -114,9 +120,9 @@ class CommandCog(commands.Cog):
                 if context.author in authorized_users:
                     return items
                 else:
-                    await self.error_embed(context, f"Only admins can specify {item_name}.")
+                    await self.error_embed(context, f"Only authorized users can specify {item_name}.")
             elif items[0] not in allowed_items:
-                await self.error_embed(context, f"Only admins can specify other {item_name}.")
+                await self.error_embed(context, f"Only authorized users can specify other {item_name}.")
             return
 
     async def get_and_calculate_subs(self, user):
@@ -139,10 +145,10 @@ class CommandCog(commands.Cog):
         subreddits = [(i["display_name"], i["subscribers"]) for i in moderated]
         subscribers = sum([subreddit[1] for subreddit in subreddits])
         sub_count = len(subreddits)
-        zeroCount = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 0])
+        zero_count = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 0])
         remaining = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 1])
-        subAverage = int(round(subscribers / len(subreddits))) if subreddits else 0
-        return remaining, subAverage, sub_count, subreddits, subscribers, zeroCount
+        sub_average = int(round(subscribers / len(subreddits))) if subreddits else 0
+        return remaining, sub_average, sub_count, subreddits, subscribers, zero_count
 
     async def get_authorized_user(self, context):
         results = await self.sql.fetch(

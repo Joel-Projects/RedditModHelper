@@ -222,7 +222,7 @@ class PaginatedHelpCommand(commands.HelpCommand):
         await self.context.release()
         await menu.start(self.context)
 
-    def parseDate(self, date: str = None):
+    def parse_date(self, date: str = None):
         """
         :param date:
         :return datetime.datetime: datetime object
@@ -242,18 +242,18 @@ class PaginatedHelpCommand(commands.HelpCommand):
         if date:
             if isinstance(date, int):
                 if 1 <= date <= 12:
-                    parsedDate = self.parseDate(date)
+                    parsedDate = self.parse_date(date)
             else:
-                parsedDate = self.parseDate(date)
+                parsedDate = self.parse_date(date)
         else:
             if today:
-                parsedDate = self.parseDate(time.strftime("%m/%d/%Y %I:%M:%S %p", time.localtime()))
+                parsedDate = self.parse_date(time.strftime("%m/%d/%Y %I:%M:%S %p", time.localtime()))
             else:
                 if lastMonth:
                     months = 1
                 if currentMonth:
                     months = 0
-                parsedDate = self.parseDate(
+                parsedDate = self.parse_date(
                     time.strftime(
                         "%m",
                         time.gmtime(

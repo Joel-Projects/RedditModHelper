@@ -1,10 +1,12 @@
+import asyncpraw
 import credmgr
 import discord
 import praw
+from discord_slash.utils.manage_commands import create_option
 
 from .utils import db
 from .utils.command_cog import CommandCog
-from .utils.commands import command
+from .utils.commands import cog_slash
 from .utils.converters import RedditorConverter, SubredditConverter
 from .utils.utils import parse_sql
 
@@ -26,34 +28,38 @@ class Webhooks(db.Table, table_name="webhooks"):
 class SubredditManagement(CommandCog):
     """A collection of Subreddit Management commands."""
 
-    @command(hidden=True)
+    @cog_slash(
+        options=[
+            create_option("subreddit", "Subreddit to add.", str, True),
+            create_option("mod_role", "Mod role for this subreddit.", discord.Role, True),
+            create_option("channel", "That subreddit's mod chat or bot command channel.", discord.TextChannel, True),
+            create_option(
+                "mod_account",
+                "Mod account to use. This is required for creating matrices, counting the queue, and getting alerts.",
+                str,
+                True,
+            ),
+            create_option("alert_channel", "That subreddit's alert channel.", discord.TextChannel, False),
+        ]
+    )
     async def addsub(
         self,
         context,
         subreddit: SubredditConverter,
         mod_role: discord.Role,
         channel: discord.TextChannel,
-        mod_account: RedditorConverter = None,
+        mod_account: RedditorConverter,
         alert_channel: discord.TextChannel = None,
     ):
-        """Adds a subreddit to the bot.
-
-        Parameters:
-
-            subreddit: Subreddit to add.
-            mod_role: That subreddit's mod role.
-            channel: That subreddit's mod chat or bot command channel.
-            mod_account: The moderator account for obtaining subreddit mod logs. Note: This is required to make generating mod matrices extremely faster and counting the mod queue. It needs to have at least `post` permissions.
-            alert_channel: The channel where alerts will go to. (Optional)
-
-        """
+        """Adds a subreddit to the bot. If you need help or have questions, contact Lil_SpazJoekp."""
+        await context.defer()
         if None in [subreddit, mod_account]:
             return
         results = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit))
         if results:
             confirm = await context.prompt(
                 f"r/{subreddit} is already added. Do you want to overwrite it?",
-                delete_after=True,
+                delete_after=False,
             )
             if not confirm:
                 return
@@ -65,7 +71,7 @@ class SubredditManagement(CommandCog):
                 auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(required_scopes, True)
                 confirm = await context.prompt(
                     f"My authorization for u/{mod_account} is not valid. I will need you to reauthorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
-                    delete_after=True,
+                    delete_after=False,
                 )
                 if not confirm:
                     await context.send("Cancelled")
@@ -73,7 +79,7 @@ class SubredditManagement(CommandCog):
             auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(required_scopes, True)
             confirm = await context.prompt(
                 f"u/{mod_account} has not granted me permission yet, I will need you to reauthorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
-                delete_after=True,
+                delete_after=False,
             )
             if not confirm:
                 await context.send("Cancelled")
@@ -81,6 +87,16 @@ class SubredditManagement(CommandCog):
         except Exception as error:
             self.log.exception(error)
         if not await self.verify_valid_auth(context, mod_account, required_scopes):
+            return
+        sub: asyncpraw.reddit.Subreddit = await self.reddit.subreddit(subreddit)
+        moderator = await sub.moderator(mod_account)
+        if moderator:
+            moderator = moderator[0]
+        if all(perm not in moderator.mod_permissions for perm in ["all", "posts"]):
+            await self.error_embed(
+                context,
+                f"u/{mod_account} does not have enough permissions. Please ensure they have at least `posts` permissions and try again.\n\nIf you have any questions, please contact <@393801572858986496>.",
+            )
             return
         if alert_channel:
             with open("redditadmin.png", "rb") as file:

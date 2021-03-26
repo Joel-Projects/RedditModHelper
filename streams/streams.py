@@ -2,6 +2,7 @@ import time
 from multiprocessing import Process
 
 import praw
+from BotUtils import BotServices
 from credmgr.exceptions import NotFound
 
 from streams.tasks import ingest_action
@@ -9,6 +10,8 @@ from streams.utils import map_values
 
 from . import cache, log, mapping, services, skip_keys
 from .models import Subreddit, Webhook
+
+services = BotServices("SiouxBot")
 
 
 class ModLogStreams:

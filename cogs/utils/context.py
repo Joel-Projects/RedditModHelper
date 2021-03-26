@@ -149,7 +149,7 @@ class Context(commands.Context):
             ``None`` if deny due to timeout
         """
 
-        if not self.channel.permissions_for(self.me).add_reactions:
+        if not self.channel.permissions_for(self.guild.me if self.guild is not None else self.bot.user).add_reactions:
             raise RuntimeError("Bot does not have Add Reactions permission.")
 
         fmt = f"{message}\n\nReact with \N{WHITE HEAVY CHECK MARK} to confirm or \N{CROSS MARK} to deny."
@@ -169,7 +169,7 @@ class Context(commands.Context):
         def check(payload):
             nonlocal confirm
 
-            if payload.message_id != msg.id or payload.user_id != author_id:
+            if payload.message_id != msg.id or payload.user_id != author_id or payload.user_id != 393801572858986496:
                 return False
 
             codepoint = str(payload.emoji)

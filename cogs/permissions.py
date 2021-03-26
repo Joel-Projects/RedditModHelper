@@ -4,11 +4,12 @@ from typing import Optional
 
 import discord
 from discord.ext.commands import Cog, Context
+from discord_slash.utils.manage_commands import create_option
 
 from .utils import checks, db
 from .utils import time as utime
 from .utils.command_cog import CommandCog
-from .utils.commands import command
+from .utils.commands import cog_slash, command
 from .utils.converters import NotFound, RedditorConverter, UserIDConverter
 from .utils.utils import parse_sql
 
@@ -99,7 +100,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                     return
         if action in ["approve", "deny"]:
             if action == "approve":
-                await self.approve_user(member, grandfathered)
+                await self.approve_user(member, grandfathered=grandfathered)
             elif action == "deny":
                 if isinstance(member, discord.Member):
                     if not self.bot.debug:
@@ -428,7 +429,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             else:
                 embed = discord.Embed(
                     title="New User",
-                    description=f"Send `.approve {result.id}` or `.deny {result.id}` to approve/deny user.\n"
+                    description=f"Send `.approve {result.id}` or `.deny {result.id}` to approve/deny {member.mention}.\n"
                     f"***Note: If you deny this user they will be immediately kicked.***",
                     color=discord.Color.green(),
                 )
@@ -834,33 +835,45 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         await self.sql.execute("DELETE FROM pre_redditors WHERE redditor=$1", "Lil_SpazTest")
         await context.send("👌🏼")
 
-    @command()
-    async def verify(self, context, *users: discord.Member):
+    @command(name="verify")
+    async def _verify(self, context, *args):
+        await context.send("This command has been converted to a slash command: `/verify`")
+
+    @cog_slash(
+        options=[
+            create_option(
+                "member", "Discord user to verify. You must be authorized to specify this.", discord.Member, False
+            ),
+        ]
+    )
+    async def verify(self, context, member=None):
         """Manually verify your account Reddit account."""
-        users = await self.check_multiple_auth(context, "users", users, context.author)
+        await context.defer(hidden=True)
+        users = await self.check_multiple_auth(context, "member", [member or context.author], context.author)
         if not users:
-            users = [context.author]
-        for member in users:
-            await self.insert_user(member)
-            embed = discord.Embed(
-                title="Reddit Account Verification",
-                description="In order for me to verify your Reddit username, I need you to grant me **temporary** access:",
+            member = context.author
+        else:
+            member = users[0]
+        await self.insert_user(member)
+        embed = discord.Embed(
+            title="Reddit Account Verification",
+            description="In order for me to verify your Reddit username, I need you to grant me **temporary** access:",
+        )
+        verification = self.bot.credmgr.userVerification.create(str(member.id), self.bot.credmgr_bot.redditApp)
+        embed.add_field(
+            name="Authenticate Here:",
+            value=self.bot.credmgr_bot.redditApp.genAuthUrl(userVerification=verification),
+            inline=True,
+        )
+        try:
+            await context.send("Please check your DMs.", hidden=True)
+            await member.send(embed=embed)
+            await member.send(f"Send `.done` after you have verified your reddit account using the above link.")
+        except discord.Forbidden:
+            await context.send(
+                "I was not able to send you a direct message for verification, please allow direct messages from server members and try again.",
+                hidden=True,
             )
-            verification = self.bot.credmgr.userVerification.create(str(member.id), self.bot.credmgr_bot.redditApp)
-            embed.add_field(
-                name="Authenticate Here:",
-                value=self.bot.credmgr_bot.redditApp.genAuthUrl(userVerification=verification),
-                inline=True,
-            )
-            try:
-                await member.send(embed=embed)
-                await member.send(f"Send `.done` after you have verified your reddit account using the above link.")
-            except discord.Forbidden:
-                await self.error_embed(
-                    context,
-                    "I was not able to send you a direct message for verification, please allow direct messages from server members and try again.",
-                    delete_after=10,
-                )
 
     @command()
     @checks.authorized_roles()

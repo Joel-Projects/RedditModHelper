@@ -7,6 +7,7 @@ from discord.ext import commands
 # Certain permissions signify if the person is a moderator (Manage Server) or an
 # admin (Administrator). Having these signify certain bypasses.
 # Of course, the owner will always be able to execute commands.
+from discord.ext.commands import NoPrivateMessage
 
 
 async def check_permissions(context, perms, *, check=all):
@@ -91,6 +92,9 @@ def is_in_guilds(*guild_ids):
 def authorized_roles():
     async def predicate(context):
         roles = await context.cog.get_bot_config("authorized_roles")
+        guild = context.guild
+        if guild is None:
+            raise NoPrivateMessage()
         return any([role.id in roles for role in context.author.roles])
 
     return commands.check(predicate)

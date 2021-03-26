@@ -17,6 +17,7 @@ import config
 from cogs.utils import context as context_cls
 from cogs.utils.command_cog import CommandCog
 from cogs.utils.config import Config
+from cogs.utils.slash import SlashCommand
 
 bot_name = config.bot_name
 description = "Hello! I am a bot written by Lil_SpazJoekp"
@@ -50,15 +51,7 @@ def _prefix_callable(bot, msg):
 class RedditModHelper(commands.AutoShardedBot):
     def __init__(self, pool):
         allowed_mentions = discord.AllowedMentions(roles=True, everyone=True, users=True)
-        intents = discord.Intents(
-            guilds=True,
-            members=True,
-            bans=True,
-            emojis=True,
-            voice_states=True,
-            messages=True,
-            reactions=True,
-        )
+        intents = discord.Intents.all()
         super().__init__(
             command_prefix=_prefix_callable,
             description=description,
@@ -83,19 +76,24 @@ class RedditModHelper(commands.AutoShardedBot):
         self.sql: asyncpg.pool.Pool = self.pool
         self.log = log
         self.running_tasks = {}
-        self.snoo_guild = None
+        self.snoo_guild: discord.Guild
+        self.file_storage: discord.TextChannel
         # shard_id: List[datetime.datetime]
         # shows the last attempted IDENTIFYs and RESUMEs
         self.resumes = defaultdict(list)
         self.identifies = defaultdict(list)
         self.prefixes = Config("prefixes.json")
         self.blacklist = Config("blacklist.json")
+        self.slash = SlashCommand(self, sync_commands=True)
         for extension in initial_extensions:
             try:
                 self.load_extension(extension)
             except Exception as error:
                 log.error(f"Failed to load extension {extension}. Error: {error}")
                 traceback.print_exc()
+
+    def get_reddit(self, username):
+        return asyncpraw.Reddit(**services.reddit(username).config._settings)
 
     def _clear_gateway_data(self):
         one_week_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
@@ -298,7 +296,8 @@ class RedditModHelper(commands.AutoShardedBot):
         if not hasattr(self, "uptime"):
             self.uptime = datetime.datetime.utcnow()
         log.info(f"Ready: {self.user} (ID: {self.user.id})")
-        self.snoo_guild = self.get_guild(785198941535731715)
+        self.snoo_guild: discord.Guild = self.get_guild(785198941535731715)
+        self.file_storage: discord.TextChannel = self.get_channel(824789213651271710)
         self.print_servers.start()
 
     class switch_reddit_instance:
@@ -347,6 +346,7 @@ class RedditModHelper(commands.AutoShardedBot):
         await context.release()
 
     async def on_message(self, message):
+        await config.check_message(self, message)
         if message.author.bot:
             return
         if self.debug and message.author.id != self.owner_id:
