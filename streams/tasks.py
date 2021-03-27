@@ -37,7 +37,7 @@ def ingest_action(self, action, admin, is_stream):
         getattr(log, "info" if status == "New" else "debug")(
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
-        if admin and is_stream and modlog_item.query_action if modlog_item else "update" == "insert":
+        if admin and is_stream and (modlog_item.query_action if modlog_item else "update") == "insert":
             webhook = cache.get(f"{action.subreddit}_admin_webhook")
             if webhook:
                 send_admin_alert.delay(action, webhook)
