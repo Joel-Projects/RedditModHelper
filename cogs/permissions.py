@@ -144,30 +144,32 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             await self.error_embed(context, f"Could not find the following users:\n\n{failed_users}")
 
     async def approve_user(self, member, send_embed=True, grandfathered=False):
-        if isinstance(member, discord.Member):
-            roles_to_add = [self.approved_role]
-            redditor = await self.get_redditor(None, member)
-            if not redditor:
-                await self.error_embed(
-                    self.approval_channel,
-                    f"Unable to approve {member.mention} because they have not verified their reddit account yet.",
-                )
-                return
-            redditor = await self.reddit.redditor(redditor, fetch=True)
-            moderated_subreddits = await redditor.moderated()
-            results = parse_sql(await self.sql.fetch("SELECT name, role_id FROM subreddits"))
-            if results:
-                roles_to_add += [
-                    self.bot.snoo_guild.get_role(result.role_id)
-                    for result in results
-                    if result.name in moderated_subreddits
-                ]
-                if roles_to_add:
-                    await member.add_roles(*roles_to_add)
-            await member.remove_roles(self.unverified_role, self.unapproved_role, self.grandfather_role)
-        if send_embed:
-            note = "\nNote: This user was grandfathered in." if grandfathered else ""
-            await self.success_embed(self.approval_channel, f"Successfully approved {member.mention}!{note}")
+        try:
+            if isinstance(member, discord.Member):
+                roles_to_add = []
+                redditor = await self.get_redditor(None, member)
+                if not redditor:
+                    await self.error_embed(
+                        self.approval_channel,
+                        f"Unable to approve {member.mention} because they have not verified their reddit account yet.",
+                    )
+                    return
+                redditor = await self.reddit.redditor(redditor, fetch=True)
+                moderated_subreddits = await redditor.moderated()
+                results = parse_sql(await self.sql.fetch("SELECT name, role_id FROM subreddits"))
+                if results:
+                    roles_to_add += [
+                        self.bot.snoo_guild.get_role(result.role_id)
+                        for result in results
+                        if result.name in moderated_subreddits and self.bot.snoo_guild.get_role(result.role_id)
+                    ]
+                    await member.add_roles(self.approved_role, *roles_to_add)
+                    await member.remove_roles(self.unverified_role, self.unapproved_role, self.grandfather_role)
+            if send_embed:
+                note = "\nNote: This user was grandfathered in." if grandfathered else ""
+                await self.success_embed(self.approval_channel, f"Successfully approved {member.mention}!{note}")
+        except Exception as error:
+            self.log.exception(error)
 
     async def check_existing_status(self, action, context, redditor):
         result = await self.sql.fetchval(
@@ -343,6 +345,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                     await self.deny_user(member)
                 elif result.status == "unverified":
                     await self.sql.execute("UPDATE users set status=$1 WHERE user_id=$2", "verified", member.id)
+                await self.send_approval_request(member, redditor)
         else:
             embed = discord.Embed(
                 title="Reddit Account Verification",
@@ -365,7 +368,6 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 welcome_message.id,
                 member.id,
             )
-        await self.send_approval_request(member, redditor)
 
     async def pre_action_user(self, context, redditor, action):
         results = parse_sql(await self.sql.fetch("SELECT * FROM pre_redditors WHERE redditor=$1", redditor))

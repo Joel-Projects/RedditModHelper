@@ -298,7 +298,8 @@ class RedditModHelper(commands.AutoShardedBot):
         log.info(f"Ready: {self.user} (ID: {self.user.id})")
         self.snoo_guild: discord.Guild = self.get_guild(785198941535731715)
         self.file_storage: discord.TextChannel = self.get_channel(824789213651271710)
-        self.print_servers.start()
+        if not self.print_servers.is_running():
+            self.print_servers.start()
 
     class switch_reddit_instance:
         def __init__(self, user, bot):

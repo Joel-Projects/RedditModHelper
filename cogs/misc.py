@@ -3,7 +3,7 @@ import asyncio
 from discord import Embed
 
 from .utils.command_cog import CommandCog
-# from .utils.slash import cog_slash
+from .utils.slash import cog_slash
 
 
 class Misc(CommandCog):
