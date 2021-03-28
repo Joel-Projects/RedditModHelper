@@ -162,7 +162,8 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                     for result in results
                     if result.name in moderated_subreddits
                 ]
-            await member.add_roles(*roles_to_add)
+                if roles_to_add:
+                    await member.add_roles(*roles_to_add)
             await member.remove_roles(self.unverified_role, self.unapproved_role, self.grandfather_role)
         if send_embed:
             note = "\nNote: This user was grandfathered in." if grandfathered else ""
