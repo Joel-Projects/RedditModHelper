@@ -1,8 +1,6 @@
 import asyncio
 import copy
 import datetime
-import json
-import os
 import string
 import sys
 import time
@@ -324,46 +322,6 @@ class Meta(CommandCog):
         if isinstance(error, commands.BadArgument):
             await context.send(error)
         self.log.error(error)
-
-    @command(hidden=True)
-    async def gencommandtests(self, context):
-        def add_item(key, subkey, item, dest):
-            if not str(key) in dest:
-                dest[str(key)] = {}
-            dest[str(key)][subkey] = item
-
-        def order_dict(dictionary):
-            result = {}
-            for key, value in sorted(dictionary.items()):
-                if isinstance(value, dict):
-                    result[key] = order_dict(value)
-                else:
-                    result[key] = value
-            return result
-
-        commands = {}
-        for command in context.bot.walk_commands():
-            if len(command.params) > 2:
-                add_item(
-                    getattr(command.cog, "qualified_name", None),
-                    command.qualified_name,
-                    {"pass": [], "will_fail": []},
-                    commands,
-                )
-            else:
-                add_item(
-                    getattr(command.cog, "qualified_name", None),
-                    command.qualified_name,
-                    {"pass": [""], "will_fail": []},
-                    commands,
-                )
-        commands = order_dict(commands)
-        if os.path.isfile("command_tests.json"):
-            with open("command_tests.json", "r") as n, open("command_tests_old.json", "w") as o:
-                o.write(n.read())
-        with open("command_tests.json", "w") as f:
-            json.dump(commands, f, indent=4)
-        await self.success_embed(context, "Wrote command test template successfully")
 
     @command(aliases=["rc"])
     async def runningcommands(self, context):

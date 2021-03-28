@@ -114,7 +114,7 @@ class Context(commands.Context):
         self,
         message,
         *,
-        timeout=60.0,
+        timeout=120.0,
         embed=None,
         delete_after=True,
         reacquire=False,

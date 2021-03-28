@@ -1,7 +1,9 @@
+import asyncio
 import inspect
 import typing
 from functools import partial
 
+from discord.context_managers import Typing as _Typing
 from discord.ext.commands import BadArgument, BadUnionArgument, CommandError, ConversionError
 from discord.ext.commands import converter as converters
 from discord_slash import SlashCommand as _SlashCommand
@@ -9,41 +11,34 @@ from discord_slash import SlashContext as _SlashContext
 from discord_slash import error
 from discord_slash.model import CogCommandObject as _CogCommandObject
 from discord_slash.model import CogSubcommandObject as _CogSubcommandObject
-from discord_slash.model import CommandObject, SubcommandObject
+from discord_slash.model import CommandObject as _CommandObject
+from discord_slash.model import SubcommandObject as _SubcommandObject
 from discord_slash.utils import manage_commands
 
 from cogs.utils.context import Context
 
+SERVERS = [785198941535731715, 521812393429303307, 646448772930600981]
+
 
 class SlashContext(_SlashContext):
-    async def defer(self, hidden: bool = False, embed=None, embeds=None):
-        """
-        'Deferes' the response, showing a loading state to the user
+    def typing(self):
+        """Returns a context manager that allows you to type for an indefinite period of time.
 
-        :param embeds:
-        :param embed:
-        :param hidden: Whether the deffered response should be ephemeral . Default ``False``.
+        This is useful for denoting long computations in your bot.
+
+        .. note::
+
+            This is both a regular context manager and an async context manager.
+            This means that both ``with`` and ``async with`` work with this.
+
+        Example Usage: ::
+
+            async with channel.typing():
+                # do expensive stuff here
+                await channel.send('done!')
+
         """
-        if embed and embeds:
-            raise error.IncorrectFormat("You can't use both `embed` and `embeds`!")
-        if embed:
-            embeds = [embed]
-        if embeds:
-            if not isinstance(embeds, list):
-                raise error.IncorrectFormat("Provide a list of embeds.")
-            elif len(embeds) > 10:
-                raise error.IncorrectFormat("Do not provide more than 10 embeds.")
-        if self._deffered or self._sent:
-            raise error.AlreadyResponded("You have already responded to this command!")
-        base = {"type": 5}
-        if hidden:
-            base["data"] = {"flags": 64}
-            self._deffered_hidden = True
-        if embeds:
-            base.setdefault("data", {})
-            base["data"]["embeds"] = [x.to_dict() for x in embeds]
-        await self._http.post_initial_response(base, self._interaction_id, self.__token)
-        self._deffered = True
+        return Typing(self)
 
 
 class SlashCommand(_SlashCommand):
@@ -101,7 +96,7 @@ class SlashCommand(_SlashCommand):
             await self.invoke_command(selected_cmd, ctx, args)
 
 
-class CustomCommandObject(CommandObject):
+class CommandObject(_CommandObject):
     """
     Slash command object of this extension.
 
@@ -117,7 +112,8 @@ class CustomCommandObject(CommandObject):
     :ivar __commands_checks__: Check of the command.
     """
 
-    async def _actual_conversion(self, ctx, converter, argument, param):
+    @staticmethod
+    async def _actual_conversion(ctx, converter, argument, param):
         if converter is bool:
             return argument
 
@@ -189,7 +185,8 @@ class CustomCommandObject(CommandObject):
 
         return await self._actual_conversion(ctx, converter, argument, param)
 
-    def _get_converter(self, param):
+    @staticmethod
+    def _get_converter(param):
         converter = param.annotation
         if converter is param.empty:
             if param.default is not param.empty:
@@ -198,8 +195,23 @@ class CustomCommandObject(CommandObject):
                 converter = str
         return converter
 
+    async def convert_args(self, args, kwargs):
+        signature = inspect.signature(self.func)
+        params = signature.parameters.copy()
+        # PEP-563 allows postponing evaluation of annotations with a __future__
+        # import. When postponed, Parameter.annotation will be a string and must
+        # be replaced with the real value for the converters to work later on
+        for key, value in params.items():
+            if isinstance(value.annotation, str):
+                params[key] = value.replace(annotation=eval(value.annotation, self.func.__globals__))
+        for name, param in params.items():
+            if name not in ["self", "context", "ctx"]:
+                converter = self._get_converter(param)
+                if name in kwargs:
+                    kwargs[name] = await self.convert(args[0], converter, kwargs[name], param)
 
-class CogCommandObject(_CogCommandObject, CustomCommandObject):
+
+class CogCommandObject(_CogCommandObject, CommandObject):
     """
     Slash command object but for Cog.
 
@@ -217,23 +229,17 @@ class CogCommandObject(_CogCommandObject, CustomCommandObject):
         can_run = await self.can_run(args[0])
         if not can_run:
             raise error.CheckFailure
-        setattr(args[0], "cog", args[0].bot.slash.commands[args[0].command].cog)
+        if self.cog:
+            setattr(args[0], "cog", self.cog)
+        else:
+            setattr(args[0], "cog", args[0].bot.slash.commands[args[0].command].cog)
         setattr(args[0], "prompt", partial(Context.prompt, args[0]))
-        signature = inspect.signature(self.func)
-        params = signature.parameters.copy()
-
-        # PEP-563 allows postponing evaluation of annotations with a __future__
-        # import. When postponed, Parameter.annotation will be a string and must
-        # be replaced with the real value for the converters to work later on
-        for key, value in params.items():
-            if isinstance(value.annotation, str):
-                params[key] = value.replace(annotation=eval(value.annotation, self.func.__globals__))
-        for name, param in params.items():
-            if name not in ["self", "context", "ctx"]:
-                converter = self._get_converter(param)
-                if name in kwargs:
-                    kwargs[name] = await self.convert(args[0], converter, kwargs[name], param)
+        await self.convert_args(args, kwargs)
         return await self.func(self.cog, *args, **kwargs)
+
+
+class SubcommandObject(_SubcommandObject, CommandObject):
+    pass
 
 
 class CogSubcommandObject(_CogSubcommandObject, SubcommandObject):
@@ -243,10 +249,6 @@ class CogSubcommandObject(_CogSubcommandObject, SubcommandObject):
     .. warning::
         Do not manually init this model.
     """
-
-    def __init__(self, *args):
-        super().__init__(*args)
-        self.cog = None  # Manually set this later.
 
     async def invoke(self, *args, **kwargs):
         """
@@ -258,18 +260,12 @@ class CogSubcommandObject(_CogSubcommandObject, SubcommandObject):
         can_run = await self.can_run(args[0])
         if not can_run:
             raise error.CheckFailure
-        signature = inspect.signature(self.func)
-        params = signature.parameters.copy()
-
-        # PEP-563 allows postponing evaluation of annotations with a __future__
-        # import. When postponed, Parameter.annotation will be a string and must
-        # be replaced with the real value for the converters to work later on
-        for key, value in params.items():
-            if isinstance(value.annotation, str):
-                params[key] = value = value.replace(annotation=eval(value.annotation, self.func.__globals__))
-        for name, param in params:
-            converter = self._get_converter(param)
-            kwargs[name] = await self.convert(args[0], converter, kwargs[name], param)
+        if self.cog:
+            setattr(args[0], "cog", self.cog)
+        else:
+            setattr(args[0], "cog", args[0].bot.slash.subcommands[args[0].command][args[0].subcommand_name].cog)
+        setattr(args[0], "prompt", partial(Context.prompt, args[0]))
+        await self.convert_args(args, kwargs)
         return await self.func(self.cog, *args, **kwargs)
 
 
@@ -309,7 +305,7 @@ def cog_slash(
     :type connector: dict
     """
     if guild_ids is None:
-        guild_ids = [785198941535731715, 521812393429303307]
+        guild_ids = SERVERS
 
     def wrapper(cmd):
         desc = description or inspect.getdoc(cmd)
@@ -382,6 +378,8 @@ def cog_subcommand(
     :param connector: Kwargs connector for the command. Default ``None``.
     :type connector: dict
     """
+    if guild_ids is None:
+        guild_ids = SERVERS
     base_description = base_description or base_desc
     subcommand_group_description = subcommand_group_description or sub_group_desc
 
@@ -405,3 +403,26 @@ def cog_subcommand(
         return CogSubcommandObject(_sub, base, name or cmd.__name__, subcommand_group)
 
     return wrapper
+
+
+class Typing(_Typing):
+    def __init__(self, messageable):
+        self.loop = messageable.bot.loop
+        self.messageable = messageable
+
+    async def do_typing(self):
+        try:
+            channel = self._channel
+        except AttributeError:
+            self.messageable = await self.messageable.bot.get_context(self.messageable.message)
+            channel = await self.messageable._get_channel()
+
+        typing = channel._state.http.send_typing
+
+        while True:
+            await typing(channel.id)
+            await asyncio.sleep(5)
+
+    async def __aenter__(self):
+        self.messageable = await self.messageable.bot.get_context(self.messageable.message)
+        return await super().__aenter__()
