@@ -69,6 +69,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     @Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        await self.set_references(self.bot.snoo_guild)
         await self.on_join(member)
 
     @staticmethod
