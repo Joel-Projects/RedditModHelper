@@ -34,7 +34,7 @@ def ingest_action(self, action, admin, is_stream):
         status = "New" if new else "Old"
         if not is_stream:
             status = f"Past {status.lower()}"
-        getattr(log, "info" if status == "New" else "info")(
+        getattr(log, "info" if status in ["New", "Past new"] else "debug")(
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin and is_stream and (modlog_item.query_action if modlog_item else "update") == "insert":
