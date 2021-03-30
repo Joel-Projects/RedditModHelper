@@ -11,7 +11,7 @@ Webhook = partial(Webhook.from_url, adapter=RequestsWebhookAdapter())
 
 app = Celery(
     "streams",
-    broker="redis://default:ks1e5cgos3pfxrtj@db-redis-nyc1-97053-do-user-4054415-0.b.db.ondigitalocean.com:25061",
+    broker="redis://localhost/1",
     task_cls="streams:DBTask",
     accept_content=["pickle"],
     result_serializer="pickle",
