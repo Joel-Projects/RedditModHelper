@@ -24,3 +24,4 @@ colorlog
 SQLAlchemy
 pylibmc
 discord-py-slash-command
+python-gitlab

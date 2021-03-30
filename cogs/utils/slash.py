@@ -3,6 +3,7 @@ import inspect
 import typing
 from functools import partial
 
+import discord as discord
 from discord.context_managers import Typing as _Typing
 from discord.ext.commands import BadArgument, BadUnionArgument, CommandError, ConversionError
 from discord.ext.commands import converter as converters
@@ -21,6 +22,51 @@ SERVERS = [785198941535731715, 521812393429303307, 646448772930600981]
 
 
 class SlashContext(_SlashContext):
+
+    # async def defer(self, hidden: bool = False, content: str = "", embed: discord.Embed = None, embeds: typing.List[discord.Embed] = None, tts: bool = False, allowed_mentions: discord.AllowedMentions = None):
+    #     """'Defers the response, showing a loading state to the user
+    #
+    #     :param hidden: Whether the deferred response should be ephemeral . Default ``False``.
+    #     """
+    #     try:
+    #         if self.deffered or self.responded:
+    #             raise error.AlreadyResponded("You have already responded to this command!")
+    #         base = {"type": 5}
+    #         if any([hidden, content, embed, embeds, tts, allowed_mentions]):
+    #             base['data'] = {}
+    #         if embed and embeds:
+    #             raise error.IncorrectFormat("You can't use both `embed` and `embeds`!")
+    #         if embed:
+    #             embeds = [embed]
+    #         if embeds:
+    #             if not isinstance(embeds, list):
+    #                 raise error.IncorrectFormat("Provide a list of embeds.")
+    #             elif len(embeds) > 10:
+    #                 raise error.IncorrectFormat("Do not provide more than 10 embeds.")
+    #         if allowed_mentions:
+    #             allowed_mentions = allowed_mentions.to_dict()
+    #         elif self.bot.allowed_mentions:
+    #             allowed_mentions = self.bot.allowed_mentions.to_dict()
+    #
+    #         if content:
+    #             base["data"]["content"] = content
+    #         if tts:
+    #             base["data"]["tts"] = tts
+    #         if embeds:
+    #             base["data"]["embeds"] = [x.to_dict() for x in embeds] if embeds else []
+    #         # if allowed_mentions:
+    #         #     base["data"]["allowed_mentions"] = allowed_mentions
+    #         if hidden:
+    #             if embeds:
+    #                 self._logger.warning("Embed is not supported for `hidden`!")
+    #             base['data']["flags"] = 64
+    #             self._deffered_hidden = True
+    #         response = await self._http.post_initial_response(base, self.interaction_id, self.__token)
+    #         self.deffered = True
+    #     except Exception as e:
+    #         print(e)
+    #     return response
+
     def typing(self):
         """Returns a context manager that allows you to type for an indefinite period of time.
 

@@ -11,7 +11,7 @@ class Misc(CommandCog):
 
     # @cog_slash()
     # async def ping(self, context):
-    #     response = await context.send(embed=Embed(title="test", description="test"))
+    #     response = await context.defer(embed=Embed(title="test", description="test"))
     #     async with context.typing():
     #         await asyncio.sleep(10)
     #         await response.edit()

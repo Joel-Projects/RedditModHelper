@@ -122,6 +122,7 @@ class Context(commands.Context):
         sendEmbed=True,
         color: discord.Color = discord.Color.orange(),
         return_message=False,
+        channel=None,
     ):
         """An interactive reaction confirmation dialog.
 
@@ -148,7 +149,10 @@ class Context(commands.Context):
             ``False`` if explicit deny,
             ``None`` if deny due to timeout
         """
-
+        if channel:
+            destination = channel
+        else:
+            destination = self
         if not self.channel.permissions_for(self.guild.me if self.guild is not None else self.bot.user).add_reactions:
             raise RuntimeError("Bot does not have Add Reactions permission.")
 
@@ -161,9 +165,9 @@ class Context(commands.Context):
             embed.color = color
             embed.description = fmt
             embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
-            msg = await self.send(embed=embed)
+            msg = await destination.send(embed=embed)
         else:
-            msg = await self.send(fmt)
+            msg = await destination.send(fmt)
         confirm = None
 
         def check(payload):

@@ -162,10 +162,10 @@ class RedditStats(CommandCog):
         await context.defer()
         start_date, end_date = await self.validate_dates(context, start_date, end_date)
         if start_date and end_date:
-            embed = await self.generate_date_embed(start_date, end_date)
-            message = await context.channel.send(embed=embed)
             subreddit = await self.get_sub_from_channel(context)
             if subreddit:
+                embed = await self.generate_date_embed(start_date, end_date)
+                message = await context.channel.send(embed=embed)
                 if use_toolbox_method:
                     redditor = self.get_authorized_user(context)
                     if redditor:

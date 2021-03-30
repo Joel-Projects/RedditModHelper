@@ -12,6 +12,8 @@ import asyncpraw
 import discord
 from BotUtils.CommonUtils import BotServices
 from discord.ext import commands, tasks
+from gitlab import Gitlab
+from gitlab.v4.objects import Project
 
 import config
 from cogs.utils import context as context_cls
@@ -78,6 +80,8 @@ class RedditModHelper(commands.AutoShardedBot):
         self.running_tasks = {}
         self.snoo_guild: discord.Guild
         self.file_storage: discord.TextChannel
+        gl = Gitlab("https://gitlab.jesassn.org", private_token=self.config.gitlab_token)
+        self.gitlab_project: Project = gl.projects.get(143)
         # shard_id: List[datetime.datetime]
         # shows the last attempted IDENTIFYs and RESUMEs
         self.resumes = defaultdict(list)

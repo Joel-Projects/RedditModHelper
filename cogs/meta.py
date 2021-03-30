@@ -13,6 +13,10 @@ import dateutil
 import discord
 from discord import Embed
 from discord.ext import commands, menus
+from discord_slash.utils.manage_commands import create_choice, create_option
+from gitlab import Gitlab
+
+import config
 
 from .utils import checks, formats
 from .utils import time
@@ -20,6 +24,7 @@ from .utils import time as utime
 from .utils.command_cog import CommandCog
 from .utils.commands import command, group
 from .utils.paginator import RoboPages
+from .utils.slash import cog_slash
 from .utils.utils import ordinal
 
 
@@ -322,6 +327,36 @@ class Meta(CommandCog):
         if isinstance(error, commands.BadArgument):
             await context.send(error)
         self.log.error(error)
+
+    @cog_slash(
+        options=[
+            create_option(
+                "feedback_type",
+                "Type of feedback.",
+                str,
+                True,
+                [
+                    create_choice(name=label.name, value=label.name)
+                    for label in Gitlab("https://gitlab.jesassn.org", private_token=config.gitlab_token)
+                    .projects.get(143)
+                    .labels.list()
+                ],
+            ),
+            create_option("title", "Feedback title", str, True),
+            create_option("extra_details", "Optional extra feedback info.", str, False),
+        ],
+    )
+    async def feedback(self, context, feedback_type, title, extra_details=None):
+        """Give feedback to the author of the bot."""
+        await context.defer()
+
+        data = {
+            "title": f"{context.author.name}: {title.title()}",
+            "description": f"{extra_details}\n\n{context.message}",
+            "labels": [feedback_type],
+        }
+        issue = self.bot.gitlab_project.issues.create(data)
+        await self.success_embed(context, "Successfully sent feedback!")
 
     @command(aliases=["rc"])
     async def runningcommands(self, context):

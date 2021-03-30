@@ -91,7 +91,7 @@ class SubredditManagement(CommandCog):
         mod_account,
         alert_channel: discord.TextChannel = None,
     ):
-        """Adds a subreddit to the bot. If you need help or have questions, contact Lil_SpazJoekp."""
+        """Add or update a subreddit. If you need help or have questions, contact Lil_SpazJoekp."""
         await context.defer()
         subreddit = await SubredditConverter().convert(context, subreddit)
         mod_account = await RedditorConverter().convert(context, mod_account)
@@ -99,8 +99,11 @@ class SubredditManagement(CommandCog):
             return
         results = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit))
         if results:
-            await self.error_embed(context, f"r/{subreddit} is already added. Please use `/manage_sub update` instead.")
-            return
+            confirm = await context.prompt(
+                f"r/{subreddit} is already added. Do you want to overwrite it?", channel=context.channel
+            )
+            if not confirm:
+                await context.send("Cancelled")
         required_scopes = ["identity", "modlog", "mysubreddits", "read", "modposts"]
         try:
             reddit: praw.Reddit = self.bot.credmgr_bot.redditApp.reddit(mod_account)
@@ -109,8 +112,8 @@ class SubredditManagement(CommandCog):
                 auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(required_scopes, True)
                 confirm = await context.prompt(
                     f"My authorization for u/{mod_account} is not valid. I will need you to reauthorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
-                    delete_after=False,
                     timeout=None,
+                    channel=context.channel,
                 )
                 if not confirm:
                     await context.send("Cancelled")
@@ -118,8 +121,8 @@ class SubredditManagement(CommandCog):
             auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(required_scopes, True)
             confirm = await context.prompt(
                 f"u/{mod_account} has not granted me permission yet, I will need you to authorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
-                delete_after=False,
                 timeout=None,
+                channel=context.channel,
             )
             if not confirm:
                 await context.send("Cancelled")
@@ -132,6 +135,9 @@ class SubredditManagement(CommandCog):
         moderator = await sub.moderator(mod_account)
         if moderator:
             moderator = moderator[0]
+        else:
+            await self.error_embed(context, f"u/{mod_account} does not moderate r/{subreddit}.")
+            return
         if all(perm not in moderator.mod_permissions for perm in ["all", "posts"]):
             await self.error_embed(
                 context,
@@ -142,7 +148,7 @@ class SubredditManagement(CommandCog):
             await self.create_or_update_alert_channel(context, subreddit, alert_channel)
         try:
             await self.sql.execute(
-                "INSERT INTO subreddits (name, role_id, channel_id, modlog_account, alert_channel_id) VALUES ($1, $2, $3, $4, $5)",
+                "INSERT INTO subreddits (name, role_id, channel_id, modlog_account, alert_channel_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name) DO UPDATE SET role_id=EXCLUDED.role_id, channel_id=EXCLUDED.channel_id, modlog_account=EXCLUDED.modlog_account, alert_channel_id=EXCLUDED.alert_channel_id",
                 subreddit,
                 mod_role.id,
                 channel.id,
