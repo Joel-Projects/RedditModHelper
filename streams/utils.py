@@ -1,4 +1,6 @@
+import itertools
 import textwrap
+from copy import copy
 
 import praw
 from discord import Embed
@@ -96,3 +98,28 @@ def gen_action_embed(action: praw.models.ModAction):
             get_more = True
     embed.set_footer(text=gen_date_string(epoch=action.created_utc))
     return embed, get_more
+
+
+def generate_sub_chunks(subreddits, chunk_size=25):
+    modded_subs = copy(subreddits)
+    modded_subs_final = copy(subreddits)
+    modded_subs_final.sort()
+    i = True
+    while i:
+        first_section = [modded_subs[x : x + chunk_size] for x in range(0, len(modded_subs), chunk_size)][0]
+        if "dankmemes" in first_section and len(modded_subs) > chunk_size:
+            i = "dankmemes" in first_section
+        else:
+            i = False
+        modded_subs = [
+            sub
+            for tup in [
+                i
+                for i in itertools.zip_longest(
+                    modded_subs[: len(modded_subs) // 2], reversed(modded_subs[len(modded_subs) // 2 :])
+                )
+            ]
+            for sub in tup
+            if sub
+        ]
+    return modded_subs, modded_subs_final

@@ -310,7 +310,6 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     async def on_join(self, member: discord.Member, context=None):
         if member.bot:
             return
-        self.log.info('on join')
         await member.add_roles(self.unverified_role)
         self.sql = self.bot.pool
         await self.insert_user(member)

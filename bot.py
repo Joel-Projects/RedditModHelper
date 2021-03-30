@@ -286,7 +286,7 @@ class RedditModHelper(commands.AutoShardedBot):
                 for member in resolved:
                     yield member
 
-    @tasks.loop(seconds=600.0)
+    @tasks.loop(seconds=1200.0)
     async def print_servers(self):
         if not self.is_closed():
             for server in self.guilds:

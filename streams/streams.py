@@ -1,8 +1,8 @@
 import time
+from itertools import zip_longest
 from multiprocessing import Process
 
 import praw
-from BotUtils import BotServices
 from credmgr.exceptions import NotFound
 
 from streams.tasks import ingest_action
@@ -10,8 +10,6 @@ from streams.utils import map_values
 
 from . import cache, log, mapping, services, skip_keys
 from .models import Subreddit, Webhook
-
-services = BotServices("SiouxBot")
 
 
 class ModLogStreams:
@@ -76,23 +74,32 @@ class ModLogStreams:
 
 def main():
     subreddits = Subreddit.query.all()
-    started_subreddits = cache.get("subreddits") or []
     to_set = {}
     accounts = {}
     for subreddit in subreddits:
-        if subreddit not in started_subreddits:
-            accounts.setdefault(subreddit.modlog_account, [])
-            accounts[subreddit.modlog_account].append(subreddit.name)
-            subreddit_webhooks = Webhook.query.get(subreddit.name)
-            if subreddit_webhooks:
-                for webhook_type in ["admin_webhook", "alert_webhook"]:
-                    webhook = getattr(subreddit_webhooks, webhook_type)
-                    if webhook:
-                        to_set[f"{subreddit.name}_{webhook_type}"] = webhook
+        accounts.setdefault(subreddit.modlog_account, [])
+        accounts[subreddit.modlog_account].append(subreddit.name)
+        subreddit_webhooks = Webhook.query.get(subreddit.name)
+        if subreddit_webhooks:
+            for webhook_type in ["admin_webhook", "alert_webhook"]:
+                webhook = getattr(subreddit_webhooks, webhook_type)
+                if webhook:
+                    to_set[f"{subreddit.name}_{webhook_type}"] = webhook
     cache.set_multi(to_set)
     for redditor, subreddits in accounts.items():
         for chunk, subreddit_chunk in enumerate([subreddits[x : x + 50] for x in range(0, len(subreddits), 50)]):
             start_streaming("+".join(subreddit_chunk), redditor, chunk)
+    subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
+    chunks = list(
+        zip_longest(
+            *[
+                reversed(chunk) if i % 2 == 0 else chunk
+                for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
+            ]
+        )
+    )
+    for chunk, subreddit_chunk in enumerate(chunks):
+        start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk)
 
 
 def start_streaming(subreddit, redditor, chunk):
@@ -110,11 +117,26 @@ def start_streaming(subreddit, redditor, chunk):
         log.exception(error)
 
 
+def set_webhooks():
+    subreddit_webhooks = Webhook.query.all()
+    to_set = {}
+    for subreddit_webhook in subreddit_webhooks:
+        if subreddit_webhook:
+            for webhook_type in ["admin_webhook", "alert_webhook"]:
+                webhook = getattr(subreddit_webhook, webhook_type)
+                if webhook:
+                    to_set[f"{subreddit_webhook.subreddit}_{webhook_type}"] = webhook
+    cache.set_multi(to_set)
+
+
 if __name__ == "__main__":
     try:
+        cache.flush_all()
+        set_webhooks()
         main()
         while True:
-            time.sleep(500)
+            set_webhooks()
+            time.sleep(30)
     except Exception as error:
         log.exception(error)
     except KeyboardInterrupt:
