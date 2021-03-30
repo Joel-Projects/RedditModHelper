@@ -1,3 +1,4 @@
+import os
 import time
 from subprocess import CalledProcessError, check_call
 
@@ -157,7 +158,7 @@ class SubredditManagement(CommandCog):
             )
             if not self.bot.debug:
                 try:
-                    check_call(["/usr/bin/pm2", "restart", "RedditModHelper-Stream"])
+                    os.system("pm2 restart RedditModHelper-Stream")
                 except Exception as error:
                     self.log.exception(error)
             embed = await self.generate_subreddit_embed(
