@@ -157,8 +157,8 @@ class SubredditManagement(CommandCog):
             )
             if not self.bot.debug:
                 try:
-                    check_call(["pm2", "restart", "RedditModHelper-Stream"])
-                except CalledProcessError as error:
+                    check_call(["/usr/bin/pm2", "restart", "RedditModHelper-Stream"])
+                except Exception as error:
                     self.log.exception(error)
             embed = await self.generate_subreddit_embed(
                 "added", subreddit, channel, mod_role, mod_account, alert_channel
