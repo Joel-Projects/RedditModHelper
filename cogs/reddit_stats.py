@@ -160,31 +160,34 @@ class RedditStats(CommandCog):
         If you have any questions ask Spaz.
         """
         await context.defer()
-        start_date, end_date = await self.validate_dates(context, start_date, end_date)
-        if start_date and end_date:
-            subreddit = await self.get_sub_from_channel(context)
-            if subreddit:
-                embed = await self.generate_date_embed(start_date, end_date)
-                message = await context.channel.send(embed=embed)
-                if use_toolbox_method:
-                    redditor = self.get_authorized_user(context)
-                    if redditor:
-                        reddit = self.bot.get_reddit(redditor)
-                        sub = reddit.subreddit(subreddit)
+        try:
+            start_date, end_date = await self.validate_dates(context, start_date, end_date)
+            if start_date and end_date:
+                subreddit = await self.get_sub_from_channel(context)
+                if subreddit:
+                    embed = await self.generate_date_embed(start_date, end_date)
+                    message = await context.channel.send(embed=embed)
+                    if use_toolbox_method:
+                        redditor = await self.get_authorized_user(context)
+                        if redditor:
+                            reddit = self.bot.get_reddit(redditor)
+                            sub = await reddit.subreddit(subreddit)
+                        else:
+                            await self.error_embed(
+                                context,
+                                "`use_toolbox_method` requires a mod account. If you need more help, contact <@393801572858986496>.",
+                            )
+                            return
                     else:
-                        await self.error_embed(
-                            context,
-                            "`use_toolbox_method` requires a mod account. If you need more help, contact <@393801572858986496>.",
-                        )
-                        return
+                        sub = await self.reddit.subreddit(subreddit)
+                    await self.gen_matrix(
+                        context, sub, start_date, end_date, remove_empty_columns, use_toolbox_method, message
+                    )
                 else:
-                    sub = await self.reddit.subreddit(subreddit)
-                await self.gen_matrix(
-                    context, sub, start_date, end_date, remove_empty_columns, use_toolbox_method, message
-                )
-            else:
-                await self.error_embed(context, "This command can only be used in a sub channel.")
-                return
+                    await self.error_embed(context, "This command can only be used in a sub channel.")
+                    return
+        except Exception as error:
+            self.log.exception(error)
 
     @command(name="modstats", hidden=True, aliases=["ms"])
     async def _modstats(self, context, *args):
@@ -570,68 +573,43 @@ class RedditStats(CommandCog):
 
     async def gen_matrix(self, context, subreddit, start_date, end_date, remove_empty_columns, tb=False, message=None):
         try:
-            if tb:
-                thingTypes = {
-                    "t1": "Comment",
-                    "t2": "Account",
-                    "t3": "Link",
-                    "t4": "Message",
-                    "t5": "Subreddit",
-                    "t6": "Award",
-                }
-                start_epoch = start_date.timestamp()
-                end_epoch = end_date.timestamp()
-                # noinspection PyTypeChecker
-                Result = NamedTuple(
-                    "Result",
-                    [
-                        ("moderator", str),
-                        ("mod_action", str),
-                        ("target_type", str),
-                    ],
-                )
-                results = []
-                reddit: asyncpraw.Reddit = subreddit._reddit
-                i = 0
-                after = None
-                responseCount = 500
-                endWhile = False
-                while responseCount == 500:
-                    if after:
-                        params = {"limit": 500, "after": after}
-                    else:
-                        params = {"limit": 500}
-                    modlog = await reddit.get(f"r/{subreddit.display_name}/about/log", params=params)
-                    actions = [action for action in modlog]
-                    responseCount = len(actions)
-                    after = actions[-1].id
-                    for action in actions:
-                        fields = (
-                            {
-                                "name": "Subreddit",
-                                "value": subreddit.display_name,
-                            },
-                            {
-                                "name": "Starting Date",
-                                "value": start_date.strftime(f"%B {ordinal(start_date.day)}, %Y"),
-                            },
-                            {
-                                "name": "Ending Date",
-                                "value": end_date.strftime(f"%B {ordinal(end_date.day)}, %Y"),
-                            },
-                            {"name": "Counted Actions", "value": f"{i:,}"},
-                            {
-                                "name": "Current Action Date",
-                                "value": time.strftime(
-                                    "%m/%d/%Y %I:%M:%S %p",
-                                    time.localtime(action.created_utc),
-                                ),
-                            },
-                        )
-                        if i == 1 or i % 1000 == 0 and i != 0:
-                            msg = await self.status_update_embed(msg, "Getting mod actions...", *fields)
+            async with self.sql.acquire() as sql:
+                if tb:
+                    thingTypes = {
+                        "t1": "Comment",
+                        "t2": "Account",
+                        "t3": "Link",
+                        "t4": "Message",
+                        "t5": "Subreddit",
+                        "t6": "Award",
+                    }
+                    start_epoch = start_date.timestamp()
+                    end_epoch = end_date.timestamp()
+                    # noinspection PyTypeChecker
+                    Result = NamedTuple(
+                        "Result",
+                        [
+                            ("moderator", str),
+                            ("mod_action", str),
+                            ("target_type", str),
+                        ],
+                    )
+                    results = []
+                    i = 0
+                    async for action in subreddit.mod.log(limit=None):
                         if start_epoch <= action.created_utc <= end_epoch:
                             i += 1
+                            if i == 1 or i % 1000 == 0 and i != 0:
+                                fields = ({
+                                              "name": "Subreddit", "value": subreddit.display_name,
+                                          }, {
+                                              "name": "Starting Date", "value": start_date.strftime(f"%B {ordinal(start_date.day)}, %Y"),
+                                          }, {
+                                              "name": "Ending Date", "value": end_date.strftime(f"%B {ordinal(end_date.day)}, %Y"),
+                                          }, {"name": "Counted Actions", "value": f"{i:,}"}, {
+                                              "name": "Current Action Date", "value": time.strftime("%m/%d/%Y %I:%M:%S %p", time.localtime(action.created_utc), ),
+                                          },)
+                                message = await self.status_update_embed(message, "Getting mod actions from reddit...", *fields)
                             thingType = None
                             if action.target_fullname:
                                 thingType = thingTypes[action.target_fullname.split("_")[0]]
@@ -645,72 +623,68 @@ class RedditStats(CommandCog):
                         elif action.created_utc > end_epoch:
                             continue
                         else:
-                            msg.embeds[0].color = discord.Color.green()
-                            msg = await self.status_done_embed(msg, "Done", *fields)
-                            end_date = datetime.fromtimestamp(action.created_utc, tz=dt.timezone.utc)
-                            endWhile = True
+                            message.embeds[0].color = discord.Color.green()
+                            message = await self.status_done_embed(message, "Done", *fields)
                             break
-                    if endWhile:
-                        break
-            else:
-                data = (subreddit.display_name, start_date, end_date)
-                query = await asyncpg.utils._mogrify(
-                    self.sql,
-                    "SELECT moderator, mod_action FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;",
-                    data,
+                else:
+                    data = (subreddit.display_name, start_date, end_date)
+                    query = await asyncpg.utils._mogrify(
+                        sql,
+                        "SELECT moderator, mod_action FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;",
+                        data,
+                    )
+                    self.log.debug(query)
+                    results = await sql.fetch(
+                        "SELECT moderator, mod_action, target_type FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;",
+                        *data,
+                        timeout=10000,
+                    )
+                    results = parse_sql(results)
+                action_types = set()
+                action_types = self._simply_mod_actions(action_types, results)
+                mods = {result.moderator: {action: 0 for action in action_types} for result in results}
+                subreddit = await self.reddit.subreddit("pics")
+                subMods = await subreddit.moderator()
+                for mod in subMods:
+                    mods[mod.name] = {action: 0 for action in action_types}
+                for result in results:
+                    mods[result.moderator][self._simplify_action(result)] += 1
+                df = pandas.DataFrame(mods)
+                df.loc["Total"] = df.sum()
+                df = df.transpose()
+                df = df.sort_values("Total", ascending=False)
+                df.loc["Total"] = df.sum()
+                df = df.transpose()
+                df = df.drop("Total")
+                df = df.sort_values("Total", ascending=False)
+                df.loc["Total"] = df.sum()
+                df = df.transpose()
+                total_column = df.pop("Total")
+                df.insert(0, "Total", total_column)
+                if remove_empty_columns:
+                    df = df.loc[:, (df != 0).any(axis=0)]
+                filename = (
+                    f'{subreddit.display_name}-matrix-{start_date.strftime("%m/%d/%Y")}-to-{end_date.strftime("%m/%d/%Y")}'
                 )
-                self.log.debug(query)
-                results = await self.sql.fetch(
-                    "SELECT moderator, mod_action, target_type FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;",
-                    *data,
-                    timeout=10000,
+                matrix = io.BytesIO()
+                dataframe_image.export(df, matrix, max_cols=-1, table_conversion="matplotlib")
+                matrix = io.BytesIO(matrix.getvalue())
+                image = await self.bot.file_storage.send(file=discord.File(matrix, filename=f"{filename}.png"))
+                csv_file = await self.bot.file_storage.send(
+                    file=discord.File(io.BytesIO(df.to_csv().encode()), filename=f"{filename}.csv")
                 )
-                results = parse_sql(results)
-            action_types = set()
-            action_types = self._simply_mod_actions(action_types, results)
-            mods = {result.moderator: {action: 0 for action in action_types} for result in results}
-            subreddit = await self.reddit.subreddit("pics")
-            subMods = await subreddit.moderator()
-            for mod in subMods:
-                mods[mod.name] = {action: 0 for action in action_types}
-            for result in results:
-                mods[result.moderator][self._simplify_action(result)] += 1
-            df = pandas.DataFrame(mods)
-            df.loc["Total"] = df.sum()
-            df = df.transpose()
-            df = df.sort_values("Total", ascending=False)
-            df.loc["Total"] = df.sum()
-            df = df.transpose()
-            df = df.drop("Total")
-            df = df.sort_values("Total", ascending=False)
-            df.loc["Total"] = df.sum()
-            df = df.transpose()
-            total_column = df.pop("Total")
-            df.insert(0, "Total", total_column)
-            if remove_empty_columns:
-                df = df.loc[:, (df != 0).any(axis=0)]
-            filename = (
-                f'{subreddit.display_name}-matrix-{start_date.strftime("%m/%d/%Y")}-to-{end_date.strftime("%m/%d/%Y")}'
-            )
-            matrix = io.BytesIO()
-            dataframe_image.export(df, matrix, max_cols=-1, table_conversion="matplotlib")
-            matrix = io.BytesIO(matrix.getvalue())
-            image = await self.bot.file_storage.send(file=discord.File(matrix, filename=f"{filename}.png"))
-            csv_file = await self.bot.file_storage.send(
-                file=discord.File(io.BytesIO(df.to_csv().encode()), filename=f"{filename}.csv")
-            )
-            embed = Embed(
-                title="Matrix", description=f'{start_date.strftime("%m/%d/%Y")} to {end_date.strftime("%m/%d/%Y")}'
-            )
-            embed.add_field(name="Download file", value=f"[{filename}.csv]({csv_file.attachments[0].url})")
-            embed.set_image(url=image.attachments[0].url)
-            if message:
-                await message.delete()
-            await context.send(f"Hey {context.author.mention}, here is your mod matrix:", embed=embed)
+                embed = Embed(
+                    title="Matrix", description=f'{start_date.strftime("%m/%d/%Y")} to {end_date.strftime("%m/%d/%Y")}'
+                )
+                embed.add_field(name="Download file", value=f"[{filename}.csv]({csv_file.attachments[0].url})")
+                embed.set_image(url=image.attachments[0].url)
+                if message:
+                    await message.delete()
+                await context.send(f"Hey {context.author.mention}, here is your mod matrix:", embed=embed)
         except CancelledError:
-            await self.cancelled_embed(context, msg)
+            await self.cancelled_embed(context, 'Matrix generation was cancelled.')
         except Exception as error:
-            self.log.error(error)
+            self.log.exception(error)
 
     async def validate_dates(self, context, starting_date, ending_date):
         start_date = await self.check_date(starting_date, current_month=True)
@@ -721,14 +695,13 @@ class RedditStats(CommandCog):
         if not end_date:
             invalid_date = ending_date
         if invalid_date:
-            await context.send(
-                self.generate_error_embed(
-                    f"{invalid_date} is not a valid date, please use a number between 1 and 12 or a valid date."
+            await context.send(embed=self.generate_error_embed(
+                    f"`{invalid_date}` is not a valid date, please use a number between 1 and 12 or a valid date."
                 )
             )
             return None, None
         if end_date < start_date:
-            await context.send(self.generate_error_embed("Start date must be before end date"))
+            await context.send(embed=self.generate_error_embed("Start date must be before end date"))
             return None, None
         return start_date, end_date
 
