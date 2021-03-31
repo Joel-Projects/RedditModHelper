@@ -1,4 +1,4 @@
-git+https://github.com/Rapptz/discord-ext-menus@84caae8038d0d
+git+https://github.com/rapptz/discord-ext-menus@84caae8038d0d
 discord.py
 asyncpraw
 BotUtils

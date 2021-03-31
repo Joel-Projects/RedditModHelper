@@ -9,13 +9,13 @@
         {
             "name": "RedditModHelper-Celery",
             "script": ".venv/bin/celery",
-            "args": "-A streams.tasks worker -l info",
+            "args": "-A streams.tasks worker -l info -c 64",
             "interpreter": ".venv/bin/python",
             "interpreter_args": "-u"
         },
         {
             "name": "RedditModHelper-Stream",
-            "script": null,
+            "script": "/bin/bash",
             "interpreter": ".venv/bin/python",
             "interpreter_args": "-u -m streams.streams"
         }

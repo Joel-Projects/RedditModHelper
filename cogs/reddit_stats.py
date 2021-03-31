@@ -20,7 +20,7 @@ import pandas
 import pytz
 import urllib3
 from dateutil.relativedelta import relativedelta
-from discord import Embed
+from discord import AllowedMentions, Embed
 from discord_slash.utils.manage_commands import create_option
 
 from .utils.command_cog import CommandCog
@@ -679,7 +679,7 @@ class RedditStats(CommandCog):
                 embed.set_image(url=image.attachments[0].url)
                 if message:
                     await message.delete()
-                await context.send(f"Hey {context.author.mention}, here is your mod matrix:", embed=embed)
+                await context.send(f"Hey {context.author.mention}, here is your mod matrix:", embed=embed, allowed_mentions=AllowedMentions.all())
         except CancelledError:
             await self.cancelled_embed(context, 'Matrix generation was cancelled.')
         except Exception as error:

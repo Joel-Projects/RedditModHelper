@@ -48,7 +48,7 @@ class SubredditManagement(CommandCog):
     ):
         if result:
             channel = self.bot.get_channel(result.channel_id)
-            mod_role = self.bot.snoo_guild.get_role(result.mod_role_id)
+            mod_role = self.bot.snoo_guild.get_role(result.role_id)
             mod_account = result.modlog_account
             alert_channel = self.bot.get_channel(result.alert_channel_id) if result.alert_channel_id else None
         embed = Embed(title=title or "Confirmation", color=discord.Color.green())
@@ -156,11 +156,7 @@ class SubredditManagement(CommandCog):
                 mod_account,
                 alert_channel.id if alert_channel else alert_channel,
             )
-            if not self.bot.debug:
-                try:
-                    os.system("pm2 restart RedditModHelper-Stream")
-                except Exception as error:
-                    self.log.exception(error)
+            self.restart_stream()
             embed = await self.generate_subreddit_embed(
                 "added", subreddit, channel, mod_role, mod_account, alert_channel
             )
@@ -218,6 +214,7 @@ class SubredditManagement(CommandCog):
                                     pass
                     embed = await self.generate_subreddit_embed("deleted", subreddit, result=result)
                     await context.send(embed=embed)
+                    self.restart_stream()
                 except Exception as error:
                     self.log.exception(error)
                     await self.error_embed(
@@ -355,6 +352,13 @@ class SubredditManagement(CommandCog):
                 admin_webhook.url,
                 alert_webhook.url,
             )
+
+    def restart_stream(self):
+        if not self.bot.debug:
+            try:
+                os.system("pm2 restart RedditModHelper-Stream")
+            except Exception as error:
+                self.log.exception(error)
 
     async def verify_valid_auth(self, context, mod_account, required_scopes):
         final_failed_message = "Authorization failed. Please try again or contact <@393801572858986496>."
