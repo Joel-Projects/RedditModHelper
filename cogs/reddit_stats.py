@@ -643,7 +643,7 @@ class RedditStats(CommandCog):
                 action_types = set()
                 action_types = self._simply_mod_actions(action_types, results)
                 mods = {result.moderator: {action: 0 for action in action_types} for result in results}
-                subreddit = await self.reddit.subreddit("pics")
+                subreddit = await self.reddit.subreddit(subreddit)
                 subMods = await subreddit.moderator()
                 for mod in subMods:
                     mods[mod.name] = {action: 0 for action in action_types}
