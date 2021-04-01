@@ -600,16 +600,31 @@ class RedditStats(CommandCog):
                         if start_epoch <= action.created_utc <= end_epoch:
                             i += 1
                             if i == 1 or i % 1000 == 0 and i != 0:
-                                fields = ({
-                                              "name": "Subreddit", "value": subreddit.display_name,
-                                          }, {
-                                              "name": "Starting Date", "value": start_date.strftime(f"%B {ordinal(start_date.day)}, %Y"),
-                                          }, {
-                                              "name": "Ending Date", "value": end_date.strftime(f"%B {ordinal(end_date.day)}, %Y"),
-                                          }, {"name": "Counted Actions", "value": f"{i:,}"}, {
-                                              "name": "Current Action Date", "value": time.strftime("%m/%d/%Y %I:%M:%S %p", time.localtime(action.created_utc), ),
-                                          },)
-                                message = await self.status_update_embed(message, "Getting mod actions from reddit...", *fields)
+                                fields = (
+                                    {
+                                        "name": "Subreddit",
+                                        "value": subreddit.display_name,
+                                    },
+                                    {
+                                        "name": "Starting Date",
+                                        "value": start_date.strftime(f"%B {ordinal(start_date.day)}, %Y"),
+                                    },
+                                    {
+                                        "name": "Ending Date",
+                                        "value": end_date.strftime(f"%B {ordinal(end_date.day)}, %Y"),
+                                    },
+                                    {"name": "Counted Actions", "value": f"{i:,}"},
+                                    {
+                                        "name": "Current Action Date",
+                                        "value": time.strftime(
+                                            "%m/%d/%Y %I:%M:%S %p",
+                                            time.localtime(action.created_utc),
+                                        ),
+                                    },
+                                )
+                                message = await self.status_update_embed(
+                                    message, "Getting mod actions from reddit...", *fields
+                                )
                             thingType = None
                             if action.target_fullname:
                                 thingType = thingTypes[action.target_fullname.split("_")[0]]
@@ -662,9 +677,7 @@ class RedditStats(CommandCog):
                 df.insert(0, "Total", total_column)
                 if remove_empty_columns:
                     df = df.loc[:, (df != 0).any(axis=0)]
-                filename = (
-                    f'{subreddit.display_name}-matrix-{start_date.strftime("%m/%d/%Y")}-to-{end_date.strftime("%m/%d/%Y")}'
-                )
+                filename = f'{subreddit.display_name}-matrix-{start_date.strftime("%m/%d/%Y")}-to-{end_date.strftime("%m/%d/%Y")}'
                 matrix = io.BytesIO()
                 dataframe_image.export(df, matrix, max_cols=-1, table_conversion="matplotlib")
                 matrix = io.BytesIO(matrix.getvalue())
@@ -679,9 +692,13 @@ class RedditStats(CommandCog):
                 embed.set_image(url=image.attachments[0].url)
                 if message:
                     await message.delete()
-                await context.send(f"Hey {context.author.mention}, here is your mod matrix:", embed=embed, allowed_mentions=AllowedMentions.all())
+                await context.send(
+                    f"Hey {context.author.mention}, here is your mod matrix:",
+                    embed=embed,
+                    allowed_mentions=AllowedMentions.all(),
+                )
         except CancelledError:
-            await self.cancelled_embed(context, 'Matrix generation was cancelled.')
+            await self.cancelled_embed(context, "Matrix generation was cancelled.")
         except Exception as error:
             self.log.exception(error)
 
@@ -694,7 +711,8 @@ class RedditStats(CommandCog):
         if not end_date:
             invalid_date = ending_date
         if invalid_date:
-            await context.send(embed=self.generate_error_embed(
+            await context.send(
+                embed=self.generate_error_embed(
                     f"`{invalid_date}` is not a valid date, please use a number between 1 and 12 or a valid date."
                 )
             )

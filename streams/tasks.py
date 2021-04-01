@@ -21,10 +21,8 @@ app.config_from_object("streams.celery_config")
 
 
 @app.task(bind=True, task_cls=LogDBTask, ignore_result=True)
-def ingest_action(self, action, admin, is_stream):
-    modlog_item = None
+def ingest_action(self, data, admin, is_stream):
     try:
-        data = map_values(action.__dict__, mapping, skip_keys)
         modlog_item = ModlogInsert(**data)
         self.session.add(modlog_item)
         try:
@@ -34,7 +32,7 @@ def ingest_action(self, action, admin, is_stream):
             self.session.rollback()
             self.retry()
         finally:
-            cache.add(action.id, action.id)
+            cache.add(data["id"], data["id"])
         new = modlog_item.query_action == "insert"
 
         status = "New" if new else "Old"
@@ -44,12 +42,12 @@ def ingest_action(self, action, admin, is_stream):
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin and is_stream and (modlog_item.query_action if modlog_item else "update") == "insert":
-            webhook = models.Webhook.get(subreddit=action.subreddit)
-            if webhook:
-                send_admin_alert.delay(action, webhook)
+            webhook = models.Webhook.query.get(data["subreddit"])
+            if webhook and webhook.admin_webhook:
+                send_admin_alert.delay(data, webhook.admin_webhook)
     except Exception as error:
         log.exception(error)
-        # TODO: maybe retry here
+        self.retry()
 
 
 @app.task(ignore_result=True)
@@ -57,9 +55,9 @@ def send_admin_alert(action, webhook):
     webhook = Webhook(webhook)
     embed, get_more = gen_action_embed(action)
     webhook.send(
-        f"To see the entire body run this command:\n`.getbody https://reddit.com{action.target_permalink}`"
+        f"To see the entire body run this command:\n`.getbody https://reddit.com{action['target_permalink']}`"
         if get_more
         else None,
         embed=embed,
     )
-    log.info(f"Notifying r/{action.subreddit} of admin action by u/{action._mod}")
+    log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")

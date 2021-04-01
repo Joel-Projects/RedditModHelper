@@ -60,21 +60,23 @@ class MemcacheHelper:
         return result
 
 
-def gen_action_embed(action: praw.models.ModAction):
+def gen_action_embed(action):
 
     embed = Embed()
 
-    embed.add_field(name="Action", value=action.action)
-    if "Anti-Evil Operations" == action._mod or "Reddit Legal" == action._mod:
-        embed.title = "AEO Action" if "Anti-Evil Operations" == action._mod else "Reddit Legal Action"
-        embed.add_field(name="Moderator", value=action._mod)
+    embed.add_field(name="Action", value=action["action"])
+    if "Anti-Evil Operations" == action["moderator"] or "Reddit Legal" == action["moderator"]:
+        embed.title = "AEO Action" if "Anti-Evil Operations" == action["moderator"] else "Reddit Legal Action"
+        embed.add_field(name="Moderator", value=action["moderator"])
     else:
         embed.title = "Admin Action"
-        embed.add_field(name="Moderator", value=f"[u/{action._mod}](https://reddit.com/user/{action._mod})")
-    embed.add_field(name="Details", value=getattr(action, "details", "None"))
-    embed.add_field(name="Description", value=getattr(action, "description", "None"))
-    title = getattr(action, "target_title", None)
-    permalink = getattr(action, "target_permalink", None)
+        embed.add_field(
+            name="Moderator", value=f"[u/{action['moderator']}](https://reddit.com/user/{action['moderator']})"
+        )
+    embed.add_field(name="Details", value=action.get("details", "None"))
+    embed.add_field(name="Description", value=action.get("description", "None"))
+    title = action.get("target_title", None)
+    permalink = action.get("target_permalink", None)
     if title and permalink:
         embed.add_field(name="Target", value=f"[{title}](")
     elif title:
@@ -83,20 +85,20 @@ def gen_action_embed(action: praw.models.ModAction):
         embed.add_field(name="Permalink", value=f"[permalink](https://reddit.com{permalink})")
     # if score:
     #     embed.add_field(name="Target Score", value=f"{score:,}")
-    if getattr(action, "target_author", None):
-        target_author = f"[u/{action.target_author}](https://reddit.com/user/{action.target_author})"
+    if action.get("target_author", None):
+        target_author = f"[u/{action['target_author']}](https://reddit.com/user/{action['target_author']})"
     else:
         target_author = "None"
     embed.add_field(name="Target Author", value=target_author)
     get_more = False
-    if action.target_body:
-        bodySections = textwrap.wrap(action.target_body, 1021)
+    if action["target_body"]:
+        bodySections = textwrap.wrap(action["target_body"], 1021)
         if len(bodySections) == 1:
             embed.add_field(name="Target Body", value=f"{bodySections[0]}")
         else:
             embed.add_field(name="Target Body", value=f"{bodySections[0]}...")
             get_more = True
-    embed.set_footer(text=gen_date_string(epoch=action.created_utc))
+    embed.set_footer(text=action["created_utc"].strftime("%B %d, %Y at %I:%M:%S %p %Z"))
     return embed, get_more
 
 
