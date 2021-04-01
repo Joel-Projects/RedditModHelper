@@ -49,6 +49,7 @@ class Subreddit(Base):
     channel_id = Column(BigInteger, nullable=False)
     modlog_account = Column(Text)
     alert_channel_id = Column(BigInteger)
+    backlogs_ingested = Column(Boolean)
 
     query = Session.query_property()
 

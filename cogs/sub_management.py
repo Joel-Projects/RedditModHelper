@@ -22,6 +22,7 @@ class Subreddits(db.Table, table_name="subreddits"):
     channel_id = db.Column(db.Integer(big=True), nullable=False)
     modlog_account = db.Column(db.String, nullable=False)
     alert_channel_id = db.Column(db.Integer(big=True))
+    backlogs_ingested = db.Column(db.Boolean())
 
 
 class Webhooks(db.Table, table_name="webhooks"):
