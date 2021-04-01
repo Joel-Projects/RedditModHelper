@@ -3,7 +3,7 @@ from functools import partial
 from celery import Celery
 from discord import RequestsWebhookAdapter, Webhook
 
-from . import LogDBTask, cache, log, mapping, skip_keys
+from . import LogDBTask, cache, log, mapping, models, skip_keys
 from .models import ModlogInsert
 from .utils import gen_action_embed, map_values
 
@@ -24,13 +24,19 @@ app.config_from_object("streams.celery_config")
 def ingest_action(self, action, admin, is_stream):
     modlog_item = None
     try:
-        new = cache.add(action.id, action.id)
         data = map_values(action.__dict__, mapping, skip_keys)
-        if new:
-            modlog_item = ModlogInsert(**data)
-            self.session.add(modlog_item)
+        modlog_item = ModlogInsert(**data)
+        self.session.add(modlog_item)
+        try:
             self.session.commit()
-            new = modlog_item.query_action == "insert"
+        except Exception as error:
+            log.exception(error)
+            self.session.rollback()
+            self.retry()
+        finally:
+            cache.add(action.id, action.id)
+        new = modlog_item.query_action == "insert"
+
         status = "New" if new else "Old"
         if not is_stream:
             status = f"Past {status.lower()}"
@@ -38,7 +44,7 @@ def ingest_action(self, action, admin, is_stream):
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin and is_stream and (modlog_item.query_action if modlog_item else "update") == "insert":
-            webhook = cache.get(f"{action.subreddit}_admin_webhook")
+            webhook = models.Webhook.get(subreddit=action.subreddit)
             if webhook:
                 send_admin_alert.delay(action, webhook)
     except Exception as error:

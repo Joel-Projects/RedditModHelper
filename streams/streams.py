@@ -25,7 +25,9 @@ class ModLogStreams:
             for action in modlog:
                 try:
                     data = map_values(action.__dict__, mapping, skip_keys)
-                    ingest_action.delay(action, admin, stream)
+                    result = cache.get(action.id)
+                    if result != action.id:
+                        ingest_action.delay(action, admin, stream)
                     status = "New" if stream else "Old"
                     if not stream:
                         status = f"Past {status.lower}"
