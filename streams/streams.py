@@ -89,17 +89,17 @@ def main():
     for redditor, subreddits in accounts.items():
         for chunk, subreddit_chunk in enumerate([subreddits[x : x + 50] for x in range(0, len(subreddits), 50)]):
             start_streaming("+".join(subreddit_chunk), redditor, chunk)
-    # subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
-    # chunks = list(
-    #     zip_longest(
-    #         *[
-    #             reversed(chunk) if i % 2 == 0 else chunk
-    #             for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
-    #         ]
-    #     )
-    # )
-    # for chunk, subreddit_chunk in enumerate(chunks):
-    #     start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk)
+    subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
+    chunks = list(
+        zip_longest(
+            *[
+                reversed(chunk) if i % 2 == 0 else chunk
+                for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
+            ]
+        )
+    )
+    for chunk, subreddit_chunk in enumerate(chunks):
+        start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk)
 
 
 def start_streaming(subreddit, redditor, chunk):
