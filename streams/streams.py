@@ -3,6 +3,7 @@ from itertools import zip_longest
 from multiprocessing import Process
 
 import praw
+import pylibmc
 from credmgr.exceptions import NotFound
 
 from streams.tasks import ingest_action
@@ -25,8 +26,18 @@ class ModLogStreams:
             for action in modlog:
                 try:
                     data = map_values(action.__dict__, mapping, skip_keys)
-                    result = cache.get(data["id"])
-                    if result != action.id:
+                    try:
+                        cached_id = cache.get(data["id"])
+                    except pylibmc.Error:
+                        log.warning("Waiting 3 seconds before trying again")
+                        time.sleep(3)
+                        try:
+                            cached_id = cache.get(data["id"])
+                        except pylibmc.Error as error:
+                            log.exception(error)
+                            cached_id = None
+                            pass
+                    if cached_id != action.id:
                         result = ingest_action.delay(data, admin, stream)
                         result.forget()
                     status = "New" if stream else "Old"
