@@ -1,3 +1,4 @@
+import os
 from functools import partial
 
 from celery import Celery
@@ -42,11 +43,13 @@ def ingest_action(self, data, admin, is_stream):
         ]
         new = True
         try:
-            sql = self.conn.cursor()
+            conn = self._pool.getconn(key=os.getpid())
+            sql = conn.cursor()
             sql.execute(QUERY, [data.get(key, None) for key in columns])
             modlog_item = sql.fetchone()
             new = modlog_item.new
             cache.add(data["id"], data["id"])
+            self._pool.putconn(conn, key=os.getpid())
         except Exception as error:
             log.exception(error)
             self.retry()
