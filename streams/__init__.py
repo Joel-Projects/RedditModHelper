@@ -56,7 +56,7 @@ def setup_task_logger(logger, *args, **kwargs):
     }
     colors = {"log_colors": logColors, "secondary_log_colors": secondaryLogColors}
     formatter = CeleryFormatter(
-        "{asctime} [{log_color}{levelname:^9}{reset}] [{blue}{task_name}{reset}::{blue}{task_id}{reset}] [{cyan}{name}{reset}] {message_log_color}{message}",
+        "{asctime} [{log_color}{levelname:^9}{reset}] [{blue}{task_name}{reset}{reset}] [{cyan}{name}{reset}] {message_log_color}{message}",
         datefmt="%m/%d/%Y %I:%M:%S %p",
         style="{",
         **colors,
