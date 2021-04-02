@@ -43,13 +43,13 @@ def ingest_action(self, data, admin, is_stream):
         ]
         new = True
         try:
-            conn = self._pool.getconn(key=os.getpid())
+            conn = self._pool.getconn()
             sql = conn.cursor()
             sql.execute(QUERY, [data.get(key, None) for key in columns])
             modlog_item = sql.fetchone()
             new = modlog_item.new
             cache.add(data["id"], data["id"])
-            self._pool.putconn(conn, key=os.getpid())
+            self._pool.putconn(conn)
         except Exception as error:
             log.exception(error)
             self.retry()
