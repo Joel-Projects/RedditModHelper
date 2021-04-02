@@ -2,10 +2,7 @@ import itertools
 import textwrap
 from copy import copy
 
-import praw
 from discord import Embed
-
-from cogs.utils.utils import gen_date_string
 
 
 def convert_or_none(func):

@@ -38,8 +38,10 @@ class ModLogStreams:
                             cached_id = None
                             pass
                     if cached_id != action.id:
-                        result = ingest_action.delay(data, admin, stream)
-                        result.forget()
+                        result = ingest_action.apply_async(
+                            args=[data, admin, stream], priority=(2 if admin else 1) + (2 if stream else 0)
+                        )
+                        # result.forget()
                     status = "New" if stream else "Old"
                     if not stream:
                         status = f"Past {status.lower}"

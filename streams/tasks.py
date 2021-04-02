@@ -3,15 +3,15 @@ from functools import partial
 from celery import Celery
 from discord import RequestsWebhookAdapter, Webhook
 
-from . import DBTask, cache, log, mapping, models, skip_keys
-from .models import ModlogInsert
-from .utils import gen_action_embed, map_values
+from . import cache, log, models
+from .utils import gen_action_embed
 
 Webhook = partial(Webhook.from_url, adapter=RequestsWebhookAdapter())
 
 app = Celery(
     "streams",
-    broker="redis://localhost/1",
+    broker="amqp://guest:guest@localhost:5672/RedditModHelper",
+    task_queue_max_priority=4,
     task_cls="streams:DBTask",
     accept_content=["pickle"],
     result_serializer="pickle",
