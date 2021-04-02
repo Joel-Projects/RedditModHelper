@@ -1,7 +1,7 @@
 from sqlalchemy import CHAR, TIMESTAMP, BigInteger, Boolean, Column, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 
-from . import LogSession, Session, services
+from . import Session, services
 
 session = services.sqlalc()
 Base = declarative_base(bind=session.bind)
@@ -34,7 +34,7 @@ class ModlogInsert(LogBase):
     query_action = Column(Text)
     # is_admin = Column(Boolean)
 
-    query = LogSession.query_property()
+    # query = LogSession.query_property()
 
     def __repr__(self):
         return f"<ModAction(subreddit='{self.subreddit}', mod='{self.moderator}', action='{self.mod_action}')>"

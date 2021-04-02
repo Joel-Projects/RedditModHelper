@@ -3,7 +3,7 @@ from functools import partial
 from celery import Celery
 from discord import RequestsWebhookAdapter, Webhook
 
-from . import LogDBTask, cache, log, mapping, models, skip_keys
+from . import DBTask, cache, log, mapping, models, skip_keys
 from .models import ModlogInsert
 from .utils import gen_action_embed, map_values
 
@@ -19,21 +19,37 @@ app = Celery(
 )
 app.config_from_object("streams.celery_config")
 
+QUERY = "INSERT INTO mirror.modlog_insert(id, created_utc, moderator, subreddit, mod_action, details,  description, target_author, target_body, target_type, target_id, target_permalink, target_title, query_action) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'insert') RETURNING (query_action='insert') as new;"
 
-@app.task(bind=True, task_cls=LogDBTask, ignore_result=True)
+
+@app.task(bind=True, ignore_result=True)
 def ingest_action(self, data, admin, is_stream):
     try:
-        modlog_item = ModlogInsert(**data)
-        self.session.add(modlog_item)
+        columns = [
+            "id",
+            "created_utc",
+            "moderator",
+            "subreddit",
+            "mod_action",
+            "details",
+            "description",
+            "target_author",
+            "target_body",
+            "target_type",
+            "target_id",
+            "target_permalink",
+            "target_title",
+        ]
+        new = True
         try:
-            self.session.commit()
+            sql = self.conn.cursor()
+            sql.execute(QUERY, [data.get(key, None) for key in columns])
+            modlog_item = sql.fetchone()
+            new = modlog_item.new
+            cache.add(data["id"], data["id"])
         except Exception as error:
             log.exception(error)
-            self.session.rollback()
             self.retry()
-        finally:
-            cache.add(data["id"], data["id"])
-        new = modlog_item.query_action == "insert"
 
         status = "New" if new else "Old"
         if not is_stream:
@@ -41,7 +57,7 @@ def ingest_action(self, data, admin, is_stream):
         getattr(log, "info" if status in ["New", "Past new"] else "debug")(
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
-        if admin and is_stream and (modlog_item.query_action if modlog_item else "update") == "insert":
+        if admin and is_stream and new:
             webhook = models.Webhook.query.get(data["subreddit"])
             if webhook and webhook.admin_webhook:
                 result = send_admin_alert.delay(data, webhook.admin_webhook)

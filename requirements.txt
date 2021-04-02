@@ -25,3 +25,4 @@ SQLAlchemy
 pylibmc
 discord-py-slash-command
 python-gitlab
+psycopg2-binary
