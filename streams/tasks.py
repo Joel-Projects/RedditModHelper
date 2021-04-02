@@ -58,7 +58,7 @@ def ingest_action(self, data, admin, is_stream):
         if not is_stream:
             status = f"Past {status.lower()}"
         getattr(log, "info" if status in ["New", "Past new"] else "debug")(
-            f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
+            f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin and is_stream and new:
             webhook = models.Webhook.query.get(data["subreddit"])
