@@ -44,7 +44,8 @@ def ingest_action(self, data, admin, is_stream):
         if admin and is_stream and (modlog_item.query_action if modlog_item else "update") == "insert":
             webhook = models.Webhook.query.get(data["subreddit"])
             if webhook and webhook.admin_webhook:
-                send_admin_alert.delay(data, webhook.admin_webhook)
+                result = send_admin_alert.delay(data, webhook.admin_webhook)
+                result.forget()
     except Exception as error:
         log.exception(error)
         self.retry()

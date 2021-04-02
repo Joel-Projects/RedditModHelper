@@ -27,7 +27,8 @@ class ModLogStreams:
                     data = map_values(action.__dict__, mapping, skip_keys)
                     result = cache.get(data["id"])
                     if result != action.id:
-                        ingest_action.delay(data, admin, stream)
+                        result = ingest_action.delay(data, admin, stream)
+                        result.forget()
                     status = "New" if stream else "Old"
                     if not stream:
                         status = f"Past {status.lower}"
@@ -128,7 +129,7 @@ def set_webhooks():
                 webhook = getattr(subreddit_webhook, webhook_type)
                 if webhook:
                     to_set[f"{subreddit_webhook.subreddit}_{webhook_type}"] = webhook
-    cache.set_multi(to_set)
+    # cache.set_multi(to_set)
 
 
 if __name__ == "__main__":
