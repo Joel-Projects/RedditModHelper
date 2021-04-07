@@ -6,7 +6,7 @@ import praw
 import pylibmc
 from credmgr.exceptions import NotFound
 
-from streams.tasks import ingest_action
+from streams.tasks import ingest_action, task_test
 from streams.utils import map_values
 
 from . import cache, log, mapping, services, skip_keys
@@ -39,7 +39,9 @@ class ModLogStreams:
                             pass
                     if cached_id != action.id:
                         result = ingest_action.apply_async(
-                            args=[data, admin, stream], priority=(2 if admin else 1) + (2 if stream else 0)
+                            args=[data, admin, stream],
+                            priority=(2 if admin else 1) + (2 if stream else 0),
+                            queue='actions'
                         )
                         # result.forget()
                     status = "New" if stream else "Old"
@@ -142,7 +144,7 @@ def set_webhooks():
                 webhook = getattr(subreddit_webhook, webhook_type)
                 if webhook:
                     to_set[f"{subreddit_webhook.subreddit}_{webhook_type}"] = webhook
-    # cache.set_multi(to_set)
+    cache.set_multi(to_set)
 
 
 if __name__ == "__main__":
