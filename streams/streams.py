@@ -1,15 +1,15 @@
 import time
-from itertools import zip_longest
+from datetime import datetime, timedelta
 from multiprocessing import Process
 
 import praw
 import pylibmc
 from credmgr.exceptions import NotFound
 
-from streams.tasks import ingest_action, task_test
+from streams.tasks import ingest_action
 from streams.utils import map_values
 
-from . import cache, log, mapping, services, skip_keys
+from . import cache, connection_pool, log, mapping, services, skip_keys
 from .models import Subreddit, Webhook
 
 
@@ -20,49 +20,74 @@ class ModLogStreams:
         self.reddit_params = reddit_params
         self.subreddit = subreddit
 
-    @staticmethod
-    def _stream(admin, modlog, stream):
-        while stream:
+    # def _chunk(self, admin, modlog):
+    #     for chunk in modlog:
+    #         mapped = list(map(partial(map_values, mapping=mapping, skip_keys=skip_keys), map(lambda item: item.__dict__, chunk)))
+    #         to_ingest = self.check_cache_multi(mapped)
+    #         ingest_action_chunk.apply_async(args=[to_ingest, admin], priority=(1 if admin else 0), queue='action_chunks')
+    #         print()
+
+    def _stream(self, admin, modlog, stream):
+        while True:
             for action in modlog:
                 try:
                     data = map_values(action.__dict__, mapping, skip_keys)
-                    try:
-                        cached_id = cache.get(data["id"])
-                    except pylibmc.Error:
-                        log.warning("Waiting 3 seconds before trying again")
-                        time.sleep(3)
-                        try:
-                            cached_id = cache.get(data["id"])
-                        except pylibmc.Error as error:
-                            log.exception(error)
-                            cached_id = None
-                            pass
+                    cached_id = self.check_cache(data)
                     if cached_id != action.id:
-                        result = ingest_action.apply_async(
+                        ingest_action.apply_async(
                             args=[data, admin, stream],
                             priority=(2 if admin else 1) + (2 if stream else 0),
-                            queue='actions'
+                            queue="actions",
                         )
-                        # result.forget()
-                    status = "New" if stream else "Old"
-                    if not stream:
-                        status = f"Past {status.lower}"
-                    log.debug(
-                        f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].strftime('%m-%d-%Y %I:%M:%S %p')}"
-                    )
                 except Exception as error:
                     log.exception(error)
 
-    def _get_modlog(self, admin, backlog):
+    @staticmethod
+    def check_cache(data):
+        try:
+            cached_id = cache.get(data["id"])
+        except pylibmc.Error:
+            log.warning("Waiting 3 seconds before trying again")
+            time.sleep(3)
+            try:
+                cached_id = cache.get(data["id"])
+            except pylibmc.Error as error:
+                log.exception(error)
+                cached_id = None
+                pass
+        return cached_id
+
+    @staticmethod
+    def check_cache_multi(items):
+        try:
+            cached_items = cache.get_multi([item["id"] for item in items])
+        except pylibmc.Error:
+            log.warning("Waiting 3 seconds before trying again")
+            time.sleep(3)
+            try:
+                cached_items = cache.get_multi([item["id"] for item in items])
+            except pylibmc.Error as error:
+                log.exception(error)
+                cached_items = []
+                pass
+        to_ingest = []
+        cached_items = list(cached_items.keys())
+        for item in items:
+            if item["id"] not in cached_items:
+                to_ingest.append(item)
+        return to_ingest
+
+    def _get_modlog(self, admin, stream):
         subreddit = praw.Reddit(**self.reddit_params).subreddit(self.subreddit)
         params = {}
         if admin:
             params["mod"] = "a"
-        if backlog:
-            params["limit"] = None
-            modlog = subreddit.mod.log
-        else:
+        if stream:
             modlog = subreddit.mod.stream.log
+        else:
+            params["limit"] = None
+            # modlog = ChunkGenerator(subreddit._reddit, API_PATH["about_log"].format(subreddit=subreddit), limit=None, params=params)
+            modlog = subreddit.mod.log
         return modlog(**params)
 
     def admin_backlog(self):
@@ -107,17 +132,17 @@ def main():
     for redditor, subreddits in accounts.items():
         for chunk, subreddit_chunk in enumerate([subreddits[x : x + 50] for x in range(0, len(subreddits), 50)]):
             start_streaming("+".join(subreddit_chunk), redditor, chunk)
-    subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
-    chunks = list(
-        zip_longest(
-            *[
-                reversed(chunk) if i % 2 == 0 else chunk
-                for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
-            ]
-        )
-    )
-    for chunk, subreddit_chunk in enumerate(chunks):
-        start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk)
+    # subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
+    # chunks = list(
+    #     zip_longest(
+    #         *[
+    #             reversed(chunk) if i % 2 == 0 else chunk
+    #             for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
+    #         ]
+    #     )
+    # )
+    # for chunk, subreddit_chunk in enumerate(chunks):
+    #     start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk)
 
 
 def start_streaming(subreddit, redditor, chunk):
@@ -135,6 +160,20 @@ def start_streaming(subreddit, redditor, chunk):
         log.exception(error)
 
 
+def set_cache():
+    log.info("Setting cache...")
+    conn = connection_pool.getconn()
+    sql = conn.cursor()
+    after_date = datetime.utcnow().astimezone() - timedelta(days=100)
+    log.info(f"Fetching ids from after {after_date.strftime('%B %d, %Y at %I:%M:%S %p %Z')}")
+    sql.execute("SELECT id FROM mirror.modlog WHERE created_utc >= %s", (after_date,))
+    results = sql.fetchall()
+    connection_pool.putconn(conn)
+    log.info(f"Caching {len(results):,} ids")
+    cache.add_multi({result.id: result.id for result in results})
+    log.info("Cache set")
+
+
 def set_webhooks():
     subreddit_webhooks = Webhook.query.all()
     to_set = {}
@@ -150,6 +189,7 @@ def set_webhooks():
 if __name__ == "__main__":
     try:
         cache.flush_all()
+        set_cache()
         set_webhooks()
         main()
         while True:

@@ -3,6 +3,7 @@ import textwrap
 from copy import copy
 
 from discord import Embed
+from praw.models import ListingGenerator
 
 
 def convert_or_none(func):
@@ -61,7 +62,7 @@ def gen_action_embed(action):
 
     embed = Embed()
 
-    embed.add_field(name="Action", value=action["action"])
+    embed.add_field(name="Action", value=action["mod_action"])
     if "Anti-Evil Operations" == action["moderator"] or "Reddit Legal" == action["moderator"]:
         embed.title = "AEO Action" if "Anti-Evil Operations" == action["moderator"] else "Reddit Legal Action"
         embed.add_field(name="Moderator", value=action["moderator"])
@@ -75,20 +76,18 @@ def gen_action_embed(action):
     title = action.get("target_title", None)
     permalink = action.get("target_permalink", None)
     if title and permalink:
-        embed.add_field(name="Target", value=f"[{title}](")
+        embed.add_field(name="Target", value=f"[{title}](https://reddit.com{permalink})")
     elif title:
         embed.add_field(name="Target Title", value=title)
     elif permalink:
         embed.add_field(name="Permalink", value=f"[permalink](https://reddit.com{permalink})")
-    # if score:
-    #     embed.add_field(name="Target Score", value=f"{score:,}")
     if action.get("target_author", None):
         target_author = f"[u/{action['target_author']}](https://reddit.com/user/{action['target_author']})"
     else:
         target_author = "None"
     embed.add_field(name="Target Author", value=target_author)
     get_more = False
-    if action["target_body"]:
+    if action.get("target_body", None):
         bodySections = textwrap.wrap(action["target_body"], 1021)
         if len(bodySections) == 1:
             embed.add_field(name="Target Body", value=f"{bodySections[0]}")
@@ -122,3 +121,17 @@ def generate_sub_chunks(subreddits, chunk_size=25):
             if sub
         ]
     return modded_subs, modded_subs_final
+
+
+class ChunkGenerator(ListingGenerator):
+    def __next__(self):
+        """Permit ListingGenerator to operate as a generator."""
+        if self.limit is not None and self.yielded >= self.limit:
+            raise StopIteration()
+
+        if self._listing is None or self._list_index >= len(self._listing):
+            self._next_batch()
+
+        self._list_index += len(self._listing)
+        self.yielded += len(self._listing)
+        return self._listing
