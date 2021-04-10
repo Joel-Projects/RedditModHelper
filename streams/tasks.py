@@ -76,7 +76,7 @@ def ingest_action(self, data, admin, is_stream):
         if not is_stream:
             status = f"Past {status.lower()}"
 
-        getattr(log, "info" if status in ["New", "Past new"] else "info")(
+        getattr(log, "info" if status in ["New", "Past new"] else "debug")(
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin and new and is_stream:
