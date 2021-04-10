@@ -37,7 +37,7 @@ app.conf.task_default_queue = "default"
 app.conf.task_default_exchange = "default"
 app.conf.task_default_routing_key = "default"
 
-QUERY = "INSERT INTO mirror.modlog_insert(id, created_utc, moderator, subreddit, mod_action, details,  description, target_author, target_body, target_type, target_id, target_permalink, target_title) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING (query_action='insert') as new;"
+QUERY = "INSERT INTO mirror.modlog_insert(id, created_utc, moderator, subreddit, mod_action, details,  description, target_author, target_body, target_type, target_id, target_permalink, target_title, query_action) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'insert') RETURNING (query_action='insert') as new;"
 CHUNK_QUERY = "INSERT INTO mirror.modlog_insert(id, created_utc, moderator, subreddit, mod_action, details,  description, target_author, target_body, target_type, target_id, target_permalink, target_title) VALUES %s RETURNING query_action;"
 
 

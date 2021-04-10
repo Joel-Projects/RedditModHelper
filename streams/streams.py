@@ -41,6 +41,8 @@ class ModLogStreams:
                         )
                 except Exception as error:
                     log.exception(error)
+            if not stream:
+                break
 
     @staticmethod
     def check_cache(data):
