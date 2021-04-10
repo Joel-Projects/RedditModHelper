@@ -80,13 +80,21 @@ def ingest_action(self, data, admin, is_stream):
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin and new and is_stream:
+            conn = self._pool.getconn()
+            sql = conn.cursor()
+            sql.execute("SELECT query_action FROM mirror.modlog WHERE id=%s", (data["id"],))
+            modlog_item = sql.fetchone()
+            new = modlog_item.query_action == "insert"
             webhook = cache.get(f"{data['subreddit']}_admin_webhook")
             if not webhook:
                 subreddit = models.Webhook.query.get(data["subreddit"])
                 if subreddit:
                     webhook = subreddit.admin_webhook
-            if webhook:
+            if webhook and new:
                 send_admin_alert.delay(data, webhook)
+                sql.execute("UPDATE mirror.modlog SET query_action='update' WHERE id=%s", (data["id"],))
+            self._pool.putconn(conn)
+
     except Exception as error:
         log.exception(error)
         self.retry()
@@ -139,6 +147,7 @@ def ingest_action(self, data, admin, is_stream):
 #     except Exception as error:
 #         log.exception(error)
 #         self.retry()
+
 
 @app.task(ignore_result=True)
 def send_admin_alert(action, webhook):
