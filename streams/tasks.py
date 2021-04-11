@@ -60,20 +60,21 @@ def ingest_action(self, data, admin, is_stream):
             "target_permalink",
             "target_title",
         ]
-        new = True
-        try:
-            conn = self._pool.getconn()
-            sql = conn.cursor()
-            sql.execute(QUERY, [data.get(key, None) for key in columns])
-            modlog_item = sql.fetchone()
-            new = modlog_item.new
-            cache.add(data["id"], data["id"])
-            self._pool.putconn(conn)
-        except Exception as error:
-            if conn:
+        new = cache.add(data["id"], data["id"])
+        if new:
+            try:
+                conn = self._pool.getconn()
+                sql = conn.cursor()
+                sql.execute(QUERY, [data.get(key, None) for key in columns])
+                modlog_item = sql.fetchone()
+                new = modlog_item.new
+                cache.add(data["id"], data["id"])
                 self._pool.putconn(conn)
-            log.exception(error)
-            self.retry()
+            except Exception as error:
+                if conn:
+                    self._pool.putconn(conn)
+                log.exception(error)
+                self.retry()
 
         status = "New" if new else "Old"
         if not is_stream:
