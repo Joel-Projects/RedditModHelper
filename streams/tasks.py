@@ -28,10 +28,10 @@ mod_log_exchange = Exchange("mod_log", type="direct")
 
 app.conf.task_queues = [
     Queue("default", default_exchange, routing_key="default"),
-    Queue("actions", mod_log_exchange, routing_key="mod_log.actions", queue_arguments={"x-max-priority": 4}),
-    Queue(
-        "action_chunks", mod_log_exchange, routing_key="mod_log.action_chunks", queue_arguments={"x-max-priority": 4}
-    ),
+    Queue("actions", mod_log_exchange, routing_key="mod_log.actions", queue_arguments={"x-max-priority": 4}, durable=False),
+    # Queue(
+    #     "action_chunks", mod_log_exchange, routing_key="mod_log.action_chunks", queue_arguments={"x-max-priority": 4}
+    # ),
 ]
 app.conf.task_default_queue = "default"
 app.conf.task_default_exchange = "default"

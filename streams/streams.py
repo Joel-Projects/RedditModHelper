@@ -35,11 +35,12 @@ class ModLogStreams:
                     data = map_values(action.__dict__, mapping, skip_keys)
                     cached_id = self.check_cache(data)
                     if cached_id != action.id:
-                        ingest_action.apply_async(
+                        result = ingest_action.apply_async(
                             args=[data, admin, stream],
                             priority=(2 if admin else 1) + (2 if stream else 0),
                             queue="actions",
                         )
+                        result.get()
                 except Exception as error:
                     log.exception(error)
             if not stream:
@@ -167,9 +168,9 @@ def set_cache():
     log.info("Setting cache...")
     conn = connection_pool.getconn()
     sql = conn.cursor()
-    after_date = datetime.utcnow().astimezone() - timedelta(days=100)
-    log.info(f"Fetching ids from after {after_date.strftime('%B %d, %Y at %I:%M:%S %p %Z')}")
-    sql.execute("SELECT id FROM mirror.modlog ORDER BY created_utc DESC LIMIT 100000")
+    limit = 100000
+    log.info(f"Fetching last {limit:,} ids")
+    sql.execute("SELECT id FROM mirror.modlog ORDER BY created_utc DESC LIMIT %s", (limit,))
     results = sql.fetchall()
     connection_pool.putconn(conn)
     log.info(f"Caching {len(results):,} ids")
