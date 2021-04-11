@@ -169,7 +169,7 @@ def set_cache():
     sql = conn.cursor()
     after_date = datetime.utcnow().astimezone() - timedelta(days=100)
     log.info(f"Fetching ids from after {after_date.strftime('%B %d, %Y at %I:%M:%S %p %Z')}")
-    sql.execute("SELECT id FROM mirror.modlog WHERE created_utc >= %s", (after_date,))
+    sql.execute("SELECT id FROM mirror.modlog ORDER BY created_utc DESC LIMIT 100000")
     results = sql.fetchall()
     connection_pool.putconn(conn)
     log.info(f"Caching {len(results):,} ids")
