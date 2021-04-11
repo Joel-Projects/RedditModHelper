@@ -187,7 +187,10 @@ def set_webhooks():
                 webhook = getattr(subreddit_webhook, webhook_type)
                 if webhook:
                     to_set[f"{subreddit_webhook.subreddit}_{webhook_type}"] = webhook
-    cache.set_multi(to_set)
+    try:
+        cache.set_multi(to_set)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
