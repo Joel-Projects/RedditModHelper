@@ -43,6 +43,7 @@ CHUNK_QUERY = "INSERT INTO mirror.modlog_insert(id, created_utc, moderator, subr
 
 @app.task(bind=True, ignore_result=True)
 def ingest_action(self, data, admin, is_stream):
+    conn = None
     try:
         columns = [
             "id",
@@ -69,6 +70,8 @@ def ingest_action(self, data, admin, is_stream):
             cache.add(data["id"], data["id"])
             self._pool.putconn(conn)
         except Exception as error:
+            if conn:
+                self._pool.putconn(conn)
             log.exception(error)
             self.retry()
 
@@ -84,19 +87,25 @@ def ingest_action(self, data, admin, is_stream):
             sql = conn.cursor()
             sql.execute("SELECT query_action FROM mirror.modlog WHERE id=%s", (data["id"],))
             modlog_item = sql.fetchone()
-            new = modlog_item.query_action == "insert"
-            webhook = cache.get(f"{data['subreddit']}_admin_webhook")
-            if not webhook:
-                subreddit = models.Webhook.query.get(data["subreddit"])
-                if subreddit:
-                    webhook = subreddit.admin_webhook
-            if webhook and new:
-                send_admin_alert.delay(data, webhook)
-                sql.execute("UPDATE mirror.modlog SET query_action='update' WHERE id=%s", (data["id"],))
+            if modlog_item:
+                new = modlog_item.query_action == "insert"
+            else:
+                new = False
+            if new:
+                webhook = cache.get(f"{data['subreddit']}_admin_webhook")
+                if not webhook:
+                    subreddit = models.Webhook.query.get(data["subreddit"])
+                    if subreddit:
+                        webhook = subreddit.admin_webhook
+                if webhook and new:
+                    send_admin_alert.delay(data, webhook)
+                    sql.execute("UPDATE mirror.modlog SET query_action='update' WHERE id=%s", (data["id"],))
             self._pool.putconn(conn)
 
     except Exception as error:
         log.exception(error)
+        if conn:
+            self._pool.putconn(conn)
         self.retry()
 
 
