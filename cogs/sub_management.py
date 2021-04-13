@@ -308,6 +308,9 @@ class SubredditManagement(CommandCog):
             except Exception:
                 with open("redditmod.png", "rb") as file:
                     mod_avatar = file.read()
+        else:
+            with open("redditmod.png", "rb") as file:
+                mod_avatar = file.read()
         mapping = {"admin_webhook": "Admin Action Alert", "alert_webhook": "Subreddit Alert"}
         webhook_names = ["admin_webhook", "alert_webhook"]
         results = parse_sql(await self.sql.fetch("SELECT * FROM webhooks WHERE subreddit=$1", subreddit))
