@@ -1,17 +1,14 @@
 import sys
 import time
-from datetime import datetime, timedelta
-from functools import partial
 from itertools import zip_longest
 from multiprocessing import Process
 
 import praw
 import pylibmc
 from credmgr.exceptions import NotFound
-from praw.endpoints import API_PATH
 
-from streams.tasks import ingest_action, ingest_action_chunk
-from streams.utils import ChunkGenerator, map_values
+from streams.tasks import ingest_action
+from streams.utils import map_values
 
 from . import cache, connection_pool, log, mapping, services, skip_keys
 from .models import Subreddit, Webhook
@@ -24,16 +21,16 @@ class ModLogStreams:
         self.reddit_params = reddit_params
         self.subreddit = subreddit
 
-    def _chunk(self, admin, modlog):
-        for chunk in modlog:
-            to_send = []
-            mapped = list(
-                map(partial(map_values, mapping=mapping, skip_keys=skip_keys), map(lambda item: item.__dict__, chunk))
-            )
-            to_ingest = self.check_cache_multi(mapped)
-            for to_ingest_chunk in [to_ingest[x : x + 10] for x in range(0, len(to_ingest), 10)]:
-                to_send.append([to_ingest_chunk, admin])
-            ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
+    # def _chunk(self, admin, modlog):
+    #     for chunk in modlog:
+    #         to_send = []
+    #         mapped = list(
+    #             map(partial(map_values, mapping=mapping, skip_keys=skip_keys), map(lambda item: item.__dict__, chunk))
+    #         )
+    #         to_ingest = self.check_cache_multi(mapped)
+    #         for to_ingest_chunk in [to_ingest[x : x + 10] for x in range(0, len(to_ingest), 10)]:
+    #             to_send.append([to_ingest_chunk, admin])
+    #         ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
 
     def _stream(self, admin, modlog, stream):
         to_send = []
@@ -47,7 +44,6 @@ class ModLogStreams:
                             to_send.append([data, admin, stream])
                     if (len(to_send) % 500 == 0 or action is None) and to_send:
                         ingest_action.chunks(to_send, 10,).apply_async(
-                            priority=(1 if admin else 0),
                             queue="actions",
                         )
                 except Exception as error:
@@ -97,20 +93,21 @@ class ModLogStreams:
             params["mod"] = "a"
         if stream:
             params["pause_after"] = 0
-            modlog = subreddit.mod.stream.log(**params)
+            modlog = subreddit.mod.stream.log
+            # modlog = subreddit.mod.stream.log(**params)
         else:
-            # params["limit"] = None
-            modlog = ChunkGenerator(
-                subreddit._reddit, API_PATH["about_log"].format(subreddit=subreddit), limit=None, params=params
-            )
-            # modlog = subreddit.mod.log
-        return modlog
+            params["limit"] = None
+            # modlog = ChunkGenerator(
+            #     subreddit._reddit, API_PATH["about_log"].format(subreddit=subreddit), limit=None, params=params
+            # )
+            modlog = subreddit.mod.log
+        return modlog(**params)
 
     def admin_backlog(self):
         admin = True
         stream = False
         modlog = self._get_modlog(admin, stream)
-        self._chunk(admin, modlog)
+        self._stream(admin, modlog, stream)
 
     def admin_stream(self):
         admin = True
@@ -122,7 +119,7 @@ class ModLogStreams:
         admin = False
         stream = False
         modlog = self._get_modlog(admin, stream)
-        self._chunk(admin, modlog)
+        self._stream(admin, modlog, stream)
 
     def stream(self):
         admin = False

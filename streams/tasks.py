@@ -1,8 +1,6 @@
-import os
-import time
 from functools import partial
 
-from celery import Celery, chunks
+from celery import Celery
 from discord import RequestsWebhookAdapter, Webhook
 from kombu import Exchange, Queue
 from psycopg2.extras import execute_values
