@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from BotUtils import BotServices
 from celery import Task
 from celery.signals import after_setup_logger, after_setup_task_logger
+from psycopg2.extensions import connection
 from psycopg2.extras import NamedTupleCursor
 from psycopg2.pool import ThreadedConnectionPool
 from pylibmc import Client
@@ -75,19 +76,27 @@ session_factory = sessionmaker(bind=engine)
 Session = scoped_session(session_factory)
 
 log_params = services._getDbConnectionSettings("RedditModHelperLogDB")
-# log_url = f"postgresql://{log_params['user']}:{log_params['password']}@{log_params['host']}:{log_params['port']}/{log_params['database']}"
-# log_engine = create_engine(log_url)
-# log_session_factory = sessionmaker(bind=log_engine)
-# LogSession = scoped_session(log_session_factory)
-
 connection_pool = ThreadedConnectionPool(1, 50, cursor_factory=NamedTupleCursor, **log_params)
 
 
+class ConnectionManager:
+    def __init__(self, pool):
+        self.pool: ThreadedConnectionPool = pool
+        self.conn: connection
+
+    def __enter__(self) -> NamedTupleCursor:
+        self.conn = self.pool.getconn()
+        self.conn.autocommit = True
+        return self.conn.cursor()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.pool.putconn(self.conn)
+
+
 class DBTask(Task):
-    _conn: ThreadedConnectionPool = None
-    _pool = connection_pool
     _session: Session = None
     _session_class = Session
+    pool = ConnectionManager(connection_pool)
 
     def after_return(self, *args, **kwargs):
         if self._session is not None:
@@ -95,29 +104,7 @@ class DBTask(Task):
             self._session.close()
 
     @property
-    def conn(self) -> ThreadedConnectionPool:
-        if self._conn is None:
-            self._conn = self._pool.getconn()
-        return self._conn
-
-    @property
     def session(self) -> Session:
         if self._session is None:
             self._session = self._session_class()
         return self._session
-
-
-#
-# class LogDBTask(Task):
-#     _conn: ThreadedConnectionPool = None
-#     _pool = connection_pool
-#
-#     def after_return(self, *args, **kwargs):
-#         if self._conn is not None:
-#             self._conn.putconn()
-#
-#     @property
-#     def conn(self) -> Session:
-#         if self._conn is None:
-#             self._conn = self._pool.getconn()
-#         return self._conn

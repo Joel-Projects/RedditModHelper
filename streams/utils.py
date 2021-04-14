@@ -94,7 +94,7 @@ def gen_action_embed(action):
         else:
             embed.add_field(name="Target Body", value=f"{bodySections[0]}...")
             get_more = True
-    embed.set_footer(text=action["created_utc"].strftime("%B %d, %Y at %I:%M:%S %p %Z"))
+    embed.set_footer(text=action["created_utc"].astimezone().strftime("%B %d, %Y at %I:%M:%S %p %Z"))
     return embed, get_more
 
 
