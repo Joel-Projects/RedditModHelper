@@ -44,6 +44,7 @@ class ModLogStreams:
                             to_send.append([data, admin, stream])
                     if (len(to_send) % 500 == 0 or action is None) and to_send:
                         ingest_action.chunks(to_send, 10,).apply_async(
+                            priority=(2 if admin else 1) + (2 if stream else 0),
                             queue="actions",
                         )
                 except Exception as error:
