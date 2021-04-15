@@ -97,7 +97,7 @@ def ingest_action(self, data, admin, is_stream):
                         if subreddit:
                             webhook = subreddit.admin_webhook
                     if webhook and new:
-                        send_admin_alert.delay(data, webhook, queue="admin_alerts")
+                        send_admin_alert.apply_async(args=[data, webhook], queue="admin_alerts")
                         sql.execute("UPDATE mirror.modlog SET pinged=true WHERE id=%s", (data["id"],))
             else:
                 self.retry()
