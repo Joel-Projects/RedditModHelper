@@ -6,9 +6,10 @@ from multiprocessing import Process
 
 import praw
 import pylibmc
+from BotUtils import CommonUtils
 from credmgr.exceptions import NotFound
 
-from streams.tasks import ingest_action
+from streams.tasks import cache_ids, ingest_action
 from streams.utils import map_values
 
 from . import cache, connection_pool, log, mapping, services, skip_keys
@@ -42,6 +43,9 @@ class ModLogStreams:
                         data = map_values(action.__dict__, mapping, skip_keys)
                         if self.check_cache(data):
                             to_send.append([data, admin, stream])
+                            log.info(f"Ingesting {data['subreddit']} | {data['mod_action']} | {data['moderator']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                        else:
+                            log.info(f"Already ingested {data['subreddit']} | {data['mod_action']} | {data['moderator']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
                     if (len(to_send) % 500 == 0 or action is None) and to_send:
                         ingest_action.chunks(to_send, 10,).apply_async(
                             priority=(2 if admin else 1) + (2 if stream else 0),
@@ -160,10 +164,13 @@ def main():
             start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk)
 
 
-def start_streaming(subreddit, redditor, chunk):
+def start_streaming(subreddit, redditor, chunk, other_auth=False):
     try:
         log.info(f"Building chunk {chunk} for r/{subreddit} using u/{redditor}...")
-        reddit = services.reddit(redditor)
+        if other_auth:
+            reddit = services.reddit(redditor, botName=f'SiouxBot_Log_Thread_{chunk}')
+        else:
+            reddit = services.reddit(redditor)
         reddit_params = reddit.config._settings
         subreddit_streams = ModLogStreams(reddit_params, subreddit)
         for stream in subreddit_streams.STREAMS:
@@ -179,12 +186,9 @@ def set_cache():
     log.info("Setting cache...")
     conn = connection_pool.getconn()
     sql = conn.cursor()
-    if sys.platform != "darwin":
-        days = 100
-    else:
-        days = 10
+    days = 100
     log.info(f"Fetching last {days} days of ids...")
-    beginning_time = (datetime.utcnow().astimezone() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    beginning_time = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     sql.execute("SELECT id FROM mirror.modlog WHERE created_utc>=%s", (beginning_time,))
     results = sql.fetchall()
     connection_pool.putconn(conn)
@@ -193,8 +197,7 @@ def set_cache():
     chunks = [results[x : x + chunk_size] for x in range(0, len(results), chunk_size)]
     total_chunks = len(chunks)
     for i, result_chunk in enumerate(chunks, 1):
-        log.info(f"Caching chunk {i}/{total_chunks}..")
-        cache.add_multi({result.id: 1 for result in result_chunk})
+        cache_ids.delay({result.id: 1 for result in result_chunk}, i, total_chunks)
     log.info("Cache set")
     del results
 

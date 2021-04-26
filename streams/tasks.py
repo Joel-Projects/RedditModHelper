@@ -48,7 +48,6 @@ CHUNK_QUERY = "INSERT INTO mirror.modlog(id, created_utc, moderator, subreddit, 
 
 @app.task(bind=True, ignore_result=True)
 def ingest_action(self, data, admin, is_stream):
-    conn = None
     try:
         columns = [
             "id",
@@ -65,23 +64,21 @@ def ingest_action(self, data, admin, is_stream):
             "target_permalink",
             "target_title",
         ]
-        new = cache.add(data["id"], 1)
         with self.pool as sql:
-            if new:
-                try:
-                    sql.execute(QUERY, [data.get(key, None) for key in columns])
-                    modlog_item = sql.fetchone()
-                    new = modlog_item.new
-                    cache.add(data["id"], data["id"])
-                except Exception as error:
-                    log.exception(error)
-                    self.retry()
+            try:
+                sql.execute(QUERY, [data.get(key, None) for key in columns])
+                modlog_item = sql.fetchone()
+                new = modlog_item.new
+                cache.add(data["id"], 1)
+            except Exception as error:
+                log.exception(error)
+                self.retry()
 
         status = "New" if new else "Old"
         if not is_stream:
             status = f"Past {status.lower()}"
 
-        getattr(log, "info" if status in ["New", "Past new"] else "debug")(
+        getattr(log, "info" if status in ["New", "Past new"] else "info")(
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin and new and is_stream:
@@ -160,6 +157,11 @@ def send_admin_alert(action, webhook):
     )
     log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")
 
+
+@app.task(ignore_result=True)
+def cache_ids(ids, i, total_chunks):
+    cache.set_multi(ids)
+    log.info(f"Caching chunk {i}/{total_chunks}..")
 
 if __name__ == "__main__":
     app.start()
