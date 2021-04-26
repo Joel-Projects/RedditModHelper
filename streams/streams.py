@@ -159,7 +159,7 @@ def main(cached_ids):
             zip_longest(
                 *[
                     reversed(chunk) if i % 2 == 0 else chunk
-                    for i, chunk in enumerate([subreddits[x : x + 50] for x in range(0, len(subreddits), 50)])
+                    for i, chunk in enumerate([subreddits[x : x + 5] for x in range(0, len(subreddits), 5)])
                 ]
             )
         )
