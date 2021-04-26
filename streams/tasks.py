@@ -3,7 +3,6 @@ from functools import partial
 from celery import Celery
 from discord import RequestsWebhookAdapter, Webhook
 from kombu import Exchange, Queue
-from psycopg2.extras import execute_values
 
 from . import cache, log, models
 from .utils import gen_action_embed
@@ -29,7 +28,7 @@ app.conf.task_queues = [
     Queue("default", default_exchange, routing_key="default"),
     Queue("admin_alerts", alert_exchange, routing_key="alerts.admin"),
     Queue(
-        "actions", mod_log_exchange, routing_key="mod_log.actions", queue_arguments={"x-max-priority": 4}, durable=False
+        "actions", mod_log_exchange, routing_key="mod_log.actions", queue_arguments={"x-max-priority": 2}, durable=False
     ),
     # Queue(
     #     "action_chunks",
@@ -66,7 +65,7 @@ def ingest_action(self, data, admin, is_stream):
             "target_permalink",
             "target_title",
         ]
-        new = cache.add(data["id"], data["id"])
+        new = cache.add(data["id"], 1)
         with self.pool as sql:
             if new:
                 try:
@@ -160,3 +159,7 @@ def send_admin_alert(action, webhook):
         embed=embed,
     )
     log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")
+
+
+if __name__ == "__main__":
+    app.start()

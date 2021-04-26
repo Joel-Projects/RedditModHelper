@@ -1,5 +1,6 @@
 import sys
 import time
+from datetime import datetime, timedelta
 from itertools import zip_longest
 from multiprocessing import Process
 
@@ -39,8 +40,7 @@ class ModLogStreams:
                 try:
                     if action:
                         data = map_values(action.__dict__, mapping, skip_keys)
-                        cached_id = self.check_cache(data)
-                        if cached_id != action.id:
+                        if self.check_cache(data):
                             to_send.append([data, admin, stream])
                     if (len(to_send) % 500 == 0 or action is None) and to_send:
                         ingest_action.chunks(to_send, 10,).apply_async(
@@ -55,17 +55,17 @@ class ModLogStreams:
     @staticmethod
     def check_cache(data):
         try:
-            cached_id = cache.get(data["id"])
+            cached = cache.get(data["id"])
         except pylibmc.Error:
             log.warning("Waiting 3 seconds before trying again")
             time.sleep(3)
             try:
-                cached_id = cache.get(data["id"])
+                cached = cache.get(data["id"])
             except pylibmc.Error as error:
                 log.exception(error)
-                cached_id = None
+                cached = False
                 pass
-        return cached_id
+        return cached
 
     @staticmethod
     def check_cache_multi(items):
@@ -179,14 +179,24 @@ def set_cache():
     log.info("Setting cache...")
     conn = connection_pool.getconn()
     sql = conn.cursor()
-    limit = 100000
-    log.info(f"Fetching last {limit:,} ids")
-    sql.execute("SELECT id FROM mirror.modlog ORDER BY created_utc DESC LIMIT %s", (limit,))
+    if sys.platform != "darwin":
+        days = 100
+    else:
+        days = 10
+    log.info(f"Fetching last {days} days of ids...")
+    beginning_time = (datetime.utcnow().astimezone() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    sql.execute("SELECT id FROM mirror.modlog WHERE created_utc>=%s", (beginning_time,))
     results = sql.fetchall()
     connection_pool.putconn(conn)
     log.info(f"Caching {len(results):,} ids")
-    cache.add_multi({result.id: result.id for result in results})
+    chunk_size = 50000
+    chunks = [results[x : x + chunk_size] for x in range(0, len(results), chunk_size)]
+    total_chunks = len(chunks)
+    for i, result_chunk in enumerate(chunks, 1):
+        log.info(f"Caching chunk {i}/{total_chunks}..")
+        cache.add_multi({result.id: 1 for result in result_chunk})
     log.info("Cache set")
+    del results
 
 
 def set_webhooks():
