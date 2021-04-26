@@ -15,6 +15,7 @@ from streams.utils import map_values
 from . import cache, connection_pool, log, mapping, services, skip_keys
 from .models import Subreddit, Webhook
 
+manager = Manager()
 
 class ModLogStreams:
     STREAMS = ["admin_backlog", "admin_stream", "backlog", "stream"]
@@ -138,7 +139,6 @@ def main(cached_ids):
     subreddits = Subreddit.query.all()
     to_set = {}
     accounts = {}
-    manager = Manager()
     shared_cache = manager.dict(cached_ids)
     for subreddit in subreddits:
         accounts.setdefault(subreddit.modlog_account, [])
@@ -164,7 +164,7 @@ def main(cached_ids):
             )
         )
         for chunk, subreddit_chunk in enumerate(chunks, 1):
-            start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk, shared_cache,  other_auth=True)
+            start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk, shared_cache, other_auth=True)
 
 
 def start_streaming(subreddit, redditor, chunk, shared_cache, other_auth=False):
