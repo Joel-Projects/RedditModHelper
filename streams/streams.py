@@ -2,7 +2,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 from itertools import zip_longest
-from multiprocessing import Process
+from multiprocessing import Manager, Process
 
 import praw
 import pylibmc
@@ -34,18 +34,19 @@ class ModLogStreams:
     #             to_send.append([to_ingest_chunk, admin])
     #         ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
 
-    def _stream(self, admin, modlog, stream):
+    def _stream(self, admin, modlog, stream, shared_cache):
         to_send = []
         while True:
             for action in modlog:
                 try:
                     if action:
                         data = map_values(action.__dict__, mapping, skip_keys)
-                        if self.check_cache(data):
+                        if data['id'] not in shared_cache:
                             to_send.append([data, admin, stream])
                             log.info(f"Ingesting {data['subreddit']} | {data['mod_action']} | {data['moderator']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                            shared_cache[data['id']] = 1
                         else:
-                            log.info(f"Already ingested {data['subreddit']} | {data['mod_action']} | {data['moderator']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                            log.debug(f"Already ingested {data['subreddit']} | {data['mod_action']} | {data['moderator']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
                     if (len(to_send) % 500 == 0 or action is None) and to_send:
                         ingest_action.chunks(to_send, 10,).apply_async(
                             priority=(2 if admin else 1) + (2 if stream else 0),
@@ -108,35 +109,37 @@ class ModLogStreams:
             modlog = subreddit.mod.log
         return modlog(**params)
 
-    def admin_backlog(self):
+    def admin_backlog(self, shared_cache):
         admin = True
         stream = False
         modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream)
+        self._stream(admin, modlog, stream, shared_cache)
 
-    def admin_stream(self):
+    def admin_stream(self, shared_cache):
         admin = True
         stream = True
         modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream)
+        self._stream(admin, modlog, stream, shared_cache)
 
-    def backlog(self):
+    def backlog(self, shared_cache):
         admin = False
         stream = False
         modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream)
+        self._stream(admin, modlog, stream, shared_cache)
 
-    def stream(self):
+    def stream(self, shared_cache):
         admin = False
         stream = True
         modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream)
+        self._stream(admin, modlog, stream, shared_cache)
 
 
-def main():
+def main(cached_ids):
     subreddits = Subreddit.query.all()
     to_set = {}
     accounts = {}
+    manager = Manager()
+    shared_cache = manager.dict(cached_ids)
     for subreddit in subreddits:
         accounts.setdefault(subreddit.modlog_account, [])
         accounts[subreddit.modlog_account].append(subreddit.name)
@@ -149,7 +152,7 @@ def main():
     cache.set_multi(to_set)
     for redditor, subreddits in accounts.items():
         for chunk, subreddit_chunk in enumerate([subreddits[x : x + 50] for x in range(0, len(subreddits), 50)]):
-            start_streaming("+".join(subreddit_chunk), redditor, chunk)
+            start_streaming("+".join(subreddit_chunk), redditor, chunk, shared_cache)
     if sys.platform != "darwin":
         subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
         chunks = list(
@@ -161,10 +164,10 @@ def main():
             )
         )
         for chunk, subreddit_chunk in enumerate(chunks):
-            start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk)
+            start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk, shared_cache,  other_auth=True)
 
 
-def start_streaming(subreddit, redditor, chunk, other_auth=False):
+def start_streaming(subreddit, redditor, chunk, shared_cache, other_auth=False):
     try:
         log.info(f"Building chunk {chunk} for r/{subreddit} using u/{redditor}...")
         if other_auth:
@@ -175,7 +178,7 @@ def start_streaming(subreddit, redditor, chunk, other_auth=False):
         subreddit_streams = ModLogStreams(reddit_params, subreddit)
         for stream in subreddit_streams.STREAMS:
             log.info(f"Starting {stream} for r/{subreddit}")
-            process = Process(target=getattr(subreddit_streams, stream), daemon=True)
+            process = Process(target=getattr(subreddit_streams, stream), args=(shared_cache,), daemon=True)
             process.start()
             log.info(f"Started {stream} for r/{subreddit} (PID: {process.pid})")
     except NotFound as error:
@@ -192,14 +195,14 @@ def set_cache():
     sql.execute("SELECT id FROM mirror.modlog WHERE created_utc>=%s", (beginning_time,))
     results = sql.fetchall()
     connection_pool.putconn(conn)
-    log.info(f"Caching {len(results):,} ids")
-    chunk_size = 50000
-    chunks = [results[x : x + chunk_size] for x in range(0, len(results), chunk_size)]
-    total_chunks = len(chunks)
-    for i, result_chunk in enumerate(chunks, 1):
-        cache_ids.delay({result.id: 1 for result in result_chunk}, i, total_chunks)
+    # log.info(f"Caching {len(results):,} ids")
+    # chunk_size = 50000
+    # chunks = [results[x : x + chunk_size] for x in range(0, len(results), chunk_size)]
+    # total_chunks = len(chunks)
+    # for i, result_chunk in enumerate(chunks, 1):
+    #     cache_ids.delay({result.id: 1 for result in result_chunk}, i, total_chunks)
     log.info("Cache set")
-    del results
+    return {result.id: 1 for result in results}
 
 
 def set_webhooks():
@@ -220,9 +223,9 @@ def set_webhooks():
 if __name__ == "__main__":
     try:
         cache.flush_all()
-        set_cache()
+        cached_ids = set_cache()
         set_webhooks()
-        main()
+        main(cached_ids)
         while True:
             set_webhooks()
             time.sleep(30)
