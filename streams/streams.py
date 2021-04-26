@@ -44,10 +44,10 @@ class ModLogStreams:
                         data = map_values(action.__dict__, mapping, skip_keys)
                         if data['id'] not in shared_cache:
                             to_send.append([data, admin, stream])
-                            log.info(f"Ingesting {data['subreddit']} | {data['mod_action']} | {data['moderator']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                            log.info(f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
                             shared_cache[data['id']] = 1
                         else:
-                            log.debug(f"Already ingested {data['subreddit']} | {data['mod_action']} | {data['moderator']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                            log.debug(f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
                     if (len(to_send) % 500 == 0 or action is None) and to_send:
                         ingest_action.chunks(to_send, 10,).apply_async(
                             priority=(2 if admin else 1) + (2 if stream else 0),
