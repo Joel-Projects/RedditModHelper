@@ -18,10 +18,15 @@ import dateparser
 import discord
 import pandas
 import pytz
+import tabulate
 import urllib3
+from asyncpraw.exceptions import InvalidURL
+from asyncpraw.models import Comment, Submission
+from asyncprawcore import NotFound
 from dateutil.relativedelta import relativedelta
 from discord import AllowedMentions, Embed
 from discord_slash.utils.manage_commands import create_option
+from PIL import Image
 
 from .utils.command_cog import CommandCog
 from .utils.commands import command
@@ -48,45 +53,141 @@ class RedditStats(CommandCog):
     A collection of Reddit statistic commands
     """
 
-    @command(aliases=["ml"])
-    async def modlog(
+    @cog_slash(
+        options=[
+            create_option(
+                "thing",
+                "Can be an ID or url to a post/comment. Required if `user` isn't provided. Can't be used with `user`.",
+                str,
+                False,
+            ),
+            create_option(
+                "user",
+                "A redditor's username. Required if `thing` isn't supplied. Can't be used with `thing`.",
+                str,
+                False,
+            ),
+            create_option("mod", "Only get actions made by this moderator.", str, False),
+            create_option(
+                "limit", "Only fetch this number of actions. Maximum of 10,000 actions. Default to 10.", int, False
+            ),
+        ]
+    )
+    async def action_history(
         self,
-        context: Context,
-        *args,
-        url: str = None,
-        mod: str = None,
-        sub=None,
-        limit=None,
-        timezone: str = "Eastern",
+        context,
+        thing=None,
+        user=None,
+        mod=None,
+        limit=10,
     ):
-        """
-        Get mod actions from <url> or <user> by optional <mod>, or from <subreddit> by optional <mod>, or by <mod>
-
-        Parameters:
-            url: Reddit link for a submission, comment or redditor
-            redditor: Redditor to check
-            user: Alias for redditor
-            moderator: Name of moderator
-            mod: Alias for moderator
-            subreddit: Name of subreddit you want logs from
-            sub: Alias for subreddit
-            limit: Limits how many mod actions are returned (default: all)
-
-        Examples:
-         ```.modlog url=https://www.reddit.com/u/lil_spazjoekp mod=siouxsie_siouxv2``` will return all actions made by u/siouxsie_siouxv2 on user u/lil_spazjoekp
-         ```.modlog url=https://www.reddit.com/u/lil_spazjoekp``` will return all actions made on user u/lil_spazjoekp
-         ```.modlog mod=lil_spazjoekp limit=100``` will return 100 of the most recent actions made by u/lil_spazjoekp on all moderated subreddits
-         ```.modlog user=quimpers``` will return all actions made on u/quimpers in all moderated subreddits
-         ```.modlog user=quimpers mod=lil_spazjoekp``` will return all actions made by u/lil_spazjoekp on u/quimpers in all moderated subreddits
-         ```.modlog user=quimpers mod=lil_spazjoekp sub=fakehistoryporn``` will return all actions made by u/lil_spazjoekp on u/quimpers in r/fakehistoryporn
-         ```.modlog sub=fakehistoryporn``` will return all actions made in r/fakehistoryporn
-         ```.modlog sub=fakehistoryporn limit=100``` will return 100 of the most recent actions made in r/fakehistoryporn
-            More coming soon...
-        """
-
-        kwargs = await self.parseKwargs(args, context)
-
-        self.bot.start_task(context, self.getModlog(context, **kwargs))
+        """Get recent mod actions preformed on a post, comment, or redditor. `thing` or `user` must be provided"""
+        await context.defer()
+        subreddit = await self.get_sub_from_channel(context)
+        account = await self.get_authorized_user(context)
+        kwargs = {}
+        if not account:
+            await self.error_embed(
+                context,
+                "This command requires a mod account. If you need more help, contact <@393801572858986496>.",
+            )
+            return
+        else:
+            try:
+                if account == "Lil_SpazJoekp":
+                    reddit = self.reddit
+                else:
+                    reddit = self.bot.get_reddit(account)
+                    if not subreddit in [sub.display_name for sub in (await (await reddit.user.me()).moderated())]:
+                        await self.error_embed(
+                            context,
+                            "The moderator account set for this subreddit is not a moderator. If you need more help, contact <@393801572858986496>.",
+                        )
+                        return
+            except Exception:
+                await self.error_embed(
+                    context,
+                    "The authorization for the moderator account set for this subreddit is not valid. If you need more help, contact <@393801572858986496>.",
+                )
+                return
+        if not reddit:
+            await self.error_embed(
+                context,
+                "This command requires an authenticated moderator account for this subreddit. If you need more help, contact <@393801572858986496>.",
+            )
+            return
+        if thing and user:
+            await self.error_embed(context, "`thing` and `user` are mutually exclusive.")
+            return
+        if not (thing or user):
+            await self.error_embed(context, "Either `thing` or `user` is required.")
+            return
+        if limit > 10000:
+            await self.error_embed(
+                context,
+                "Please specify a limit of ≤10,000 or omit it completely. If you ***need*** more logs, please contact <@393801572858986496>",
+            )
+            return
+        if thing:
+            comment = None
+            submission = None
+            if "/" in thing:
+                try:
+                    comment = await reddit.comment(url=thing)
+                except (InvalidURL, NotFound):
+                    try:
+                        submission = await reddit.submission(url=thing)
+                    except (InvalidURL, NotFound):
+                        await self.error_embed(context, f"{thing} is not a valid url.")
+                        return
+            else:
+                try:
+                    comment = await reddit.comment(thing)
+                except (InvalidURL, NotFound):
+                    try:
+                        submission = await reddit.submission(thing)
+                    except (InvalidURL, NotFound):
+                        await self.error_embed(context, f"{thing} is not a valid ID.")
+                        return
+            if comment:
+                kwargs["target_id"] = comment.id
+                item_kind = "Comment"
+                split = comment.permalink.split("/")
+                split[5] = "_"
+                url = f"https://www.reddit.com{'/'.join(split)}"
+            elif submission:
+                kwargs["target_id"] = submission.id
+                item_kind = "Submission"
+                url = submission.shortlink
+            else:
+                self.log.error("Something went wrong.")
+                return
+            if (comment or submission).subreddit != subreddit:
+                self.log.error(f"That {item_kind.lower()} isn't from this subreddit.")
+        else:
+            try:
+                redditor = await reddit.redditor(user, fetch=True)
+                kwargs["target_author"] = redditor.name
+                item_kind = "Redditor"
+                url = f"https://www.reddit.com/user/{redditor.name}"
+            except Exception:
+                await self.error_embed(context, f"u/{user} is not a valid user.")
+                return
+        embed = Embed(title="Fetching Actions")
+        embed.add_field(name="Target Kind", value=item_kind)
+        embed.add_field(name="Target", value=url)
+        if mod:
+            try:
+                redditor = await reddit.redditor(user, fetch=True)
+                kwargs["moderator"] = redditor.name
+                embed.add_field(name="Moderator", value=f"u/{redditor.name}")
+            except Exception:
+                await self.error_embed(context, f"u/{user} is not a valid moderator.")
+                return
+        embed.description = f"Fetching last {limit:,} actions..."
+        message = await context.channel.send(embed=embed)
+        await self.get_modlog(context, subreddit, limit=limit, item_kind=item_kind, **kwargs)
+        await message.delete()
 
     @cog_slash(
         options=[
@@ -474,102 +575,119 @@ class RedditStats(CommandCog):
                     self.log.info(error)
                     await self.error_embed(context, "Hmm..that url didn't work")
 
-    async def getModlog(
+    async def get_modlog(
         self,
         context,
-        url: str = None,
-        mod: str = None,
-        user: str = None,
-        sub=None,
-        limit: int = None,
-        timezone: str = "Eastern",
-        action=None,
+        subreddit,
+        target_id=None,
+        target_author=None,
+        moderator=None,
+        limit=10,
+        item_kind=None,
     ):
-        """
-
-        :param url:
-        :param mod:
-        :param user:
-        :param sub:
-        :param limit:
-        :param timezone:
-        """
         try:
-            async with self.bot.pool.acquire() as sql:
-                async with context.typing():
-                    self.log.info("Getting Logs")
-                    sqlstr = "SELECT created_utc, moderator, subreddit, mod_action, details, description, target_author, target_body, target_type, target_id, target_permalink, target_title FROM mirror.modlog"
-                    subreddit = None
-                    global argIndex
-                    argIndex = 1
-                    parts = [sqlstr]
-                    values = []
-                    names = []
-                    suffix = "modlog.csv"
+            self.log.info("Getting Logs")
+            sql_str = (
+                "SELECT created_utc, moderator, mod_action, details, description FROM mirror.modlog WHERE subreddit=$1"
+            )
+            parts = [sql_str]
+            data = [subreddit]
+            names = [subreddit]
+            suffix = "action_history"
 
-                    def nextArg(arg, value):
-                        global argIndex
-                        nextIndex = lambda i: parts.append(f"{i}=${argIndex}")
-                        if len(parts) > 1:
-                            parts.append("AND")
-                        else:
-                            parts.append("WHERE")
-                        nextIndex(arg)
-                        values.append(value)
-                        argIndex += 1
+            def next_arg(column, value):
+                parts.append("AND")
+                parts.append(f"{column}=${len(data)+1}")
+                data.append(value)
 
-                    try:
-                        if limit:
-                            limit = int(limit)
-                    except:
-                        await self.error_embed(context, "Limit must be a whole number, skipping limit")
-                    if user or url or mod or sub or action:
-                        if user:
-                            userRegex = r"https?:\/\/(www\.|old\.|new\.)?reddit\.com\/(user|u)/.*?$"
-                            match = re.search(userRegex, user, re.MULTILINE)
-                            if match:
-                                thing = await self.checkUrl(context, user)
+            if target_id:
+                next_arg("target_id", target_id)
+                names.append(target_id)
+            else:
+                next_arg("target_author", target_author)
+                names.append(target_author)
+            if moderator:
+                next_arg("moderator", moderator)
+                names.append(moderator)
+            parts.append(f"ORDER BY created_utc DESC LIMIT ${len(data)+1}")
+            data.append(limit)
+
+            results = parse_sql(await self.sql.fetch(" ".join(parts), *data))
+            if results:
+                header = {
+                    "index": "",
+                    "moderator": "Moderator",
+                    "mod_action": "Action",
+                    "created_utc": datetime.utcnow().astimezone().strftime("Timestamp (%Z)"),
+                    "details": "Details",
+                    "description": "Description",
+                }
+                rows = []
+                for index, action in enumerate(results, 1):
+                    row = [index]
+                    for column in list(header.keys())[1::]:
+                        if column == "created_utc":
+                            row.append(action.created_utc.astimezone().strftime("%m-%d-%Y %H:%M:%S"))
+                        elif column == "description":
+                            value = getattr(action, column)
+                            if value:
+                                row.append(value)
                             else:
-                                thing = await self.checkUrl(context, f"https://reddit.com/u/{user}")
-                            if thing:
-                                nextArg("target_author", thing.name)
-                                names.append(thing.name)
-                        elif url:
-                            thing = await self.checkUrl(context, url)
-                            if thing:
-                                if isinstance(thing, asyncpraw.models.Redditor):
-                                    nextArg("target_author", thing.name)
-                                    names.append(thing.name)
-                                else:
-                                    nextArg("target_id", thing.id)
-                                    names.append(thing.id)
-                        if mod:
-                            modname = await self.getmod(context, mod)
-                            nextArg("moderator", modname)
-                            names.append(modname)
-                        if sub:
-                            nextArg("subreddit", sub)
-                            names.append(sub)
-                        if action:
-                            nextArg("mod_action", action)
-                            names.append(action)
-                        parts.append("ORDER BY created_utc DESC")
-                        if limit:
-                            parts.append(f"LIMIT ${argIndex}")
-                            values.append(limit)
-                        sqlStatement = await sql.prepare((" ".join(parts)))
-                        filename = "_".join(names + [suffix])
-                        link = await self.generateCSV(context, sqlStatement, filename, timezone, tuple(values))
-                        await context.send(
-                            f"Hey {context.author.mention}, got your requested modlogs logs. You can view it here: {link}"
-                        )
-                    else:
-                        await self.error_embed(
-                            context,
-                            "Please include at least one of the following:```url, mod, user, limit, action, or sub```or run this command in a sub specific channel",
-                        )
-        except CancelledError:
-            pass
+                                del header[column]
+                        else:
+                            row.append(getattr(action, column))
+                    rows.append(row)
+                mod_str = f" by u/{moderator}" if moderator else ""
+                if target_author:
+                    target_str = f"u/{target_author}"
+                else:
+                    target_str = target_id
+
+                embed = Embed(
+                    title="Action History",
+                    description=f"Last {limit:,} actions on {item_kind.lower()} {target_str}{mod_str}",
+                )
+
+                df = pandas.DataFrame(rows, columns=header.values())
+                df.set_index("", inplace=True)
+                filename = "_".join(names + [suffix])
+                if len(rows) <= 40:
+                    th_props = [
+                        ("font-size", "11px"),
+                        ("text-align", "center"),
+                        ("font-weight", "bold"),
+                        ("color", "#dcddde"),
+                        ("background-color", "#202225"),
+                    ]
+
+                    # Set CSS properties for td elements in dataframe
+                    td_props = [
+                        ("font-size", "11px"),
+                        ("text-align", "right"),
+                        ("color", "#dcddde"),
+                        ("background-color", "#202225"),
+                    ]
+
+                    # Set table styles
+                    styles = [dict(selector="th", props=th_props), dict(selector="td", props=td_props)]
+
+                    styled = df.style.set_table_styles(styles)
+                    uncropped = io.BytesIO()
+                    dataframe_image.export(styled, uncropped, max_cols=-1)
+                    image = Image.open(uncropped)
+                    width, height = image.size
+                    matrix = io.BytesIO()
+                    image.crop((1, 1, width - 1, height - 1)).save(matrix, "png")
+                    matrix.seek(0)
+                    image = await self.bot.file_storage.send(file=discord.File(matrix, filename=f"{filename}.png"))
+                    embed.set_image(url=image.attachments[0].url)
+                csv_file = await self.bot.file_storage.send(
+                    file=discord.File(io.BytesIO(df.to_csv().encode()), filename=f"{filename}.csv")
+                )
+                embed.add_field(name="Download file", value=f"[{filename}.csv]({csv_file.attachments[0].url})")
+                await context.send(embed=embed)
+        except Exception as error:
+            self.log.exception(error)
 
     async def gen_matrix(self, context, subreddit, start_date, end_date, remove_empty_columns, tb=False, message=None):
         try:
@@ -634,7 +752,6 @@ class RedditStats(CommandCog):
                                 target_type=thingType,
                             )
                             results.append(logAction)
-                            self.log.info(f"{i:,} :: {logAction}")
                         elif action.created_utc > end_epoch:
                             continue
                         else:
@@ -724,7 +841,7 @@ class RedditStats(CommandCog):
 
     @staticmethod
     async def generate_date_embed(start_date, end_date):
-        embed = Embed(title="Generating Matrix")
+        embed = Embed(title="Generating Matrix", color=discord.Color.blurple())
         embed.add_field(
             name="Starting Date",
             value=start_date.strftime(f"%B {ordinal(start_date.day)}, %Y"),

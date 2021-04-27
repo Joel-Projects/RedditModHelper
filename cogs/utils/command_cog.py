@@ -151,6 +151,8 @@ class CommandCog(commands.Cog):
         return remaining, sub_average, sub_count, subreddits, subscribers, zero_count
 
     async def get_authorized_user(self, context):
+        if self.bot.debug and context.channel.id == 816020436940226611:
+            return "Lil_SpazJoekp"
         results = await self.sql.fetch(
             "SELECT modlog_account FROM subreddits WHERE channel_id=$1",
             context.channel.id,
@@ -189,6 +191,8 @@ class CommandCog(commands.Cog):
                 await self.error_embed(context, f"r/{sub} does not exist.")
 
     async def get_sub_from_channel(self, context):
+        if self.bot.debug and context.channel.id == 816020436940226611:
+            return "pics"
         results = await self.sql.fetch("SELECT name FROM subreddits WHERE channel_id=$1", context.channel.id)
         results = parse_sql(results)
         if results:
