@@ -660,7 +660,7 @@ class RedditStats(CommandCog):
 
                     styled = df.style.set_table_styles(styles)
                     uncropped = io.BytesIO()
-                    dataframe_image.export(styled, uncropped, max_cols=-1)
+                    dataframe_image.export(styled, uncropped, max_cols=-1, table_conversion="matplotlib")
                     image = Image.open(uncropped)
                     width, height = image.size
                     matrix = io.BytesIO()
