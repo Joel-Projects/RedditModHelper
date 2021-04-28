@@ -1,51 +1,112 @@
 """Commands for getting various Reddit Moderation statistics"""
-import datetime as dt
-import hashlib
+import enum
 import io
-import os
-import re
-import textwrap
 import time
 from asyncio import CancelledError
 from datetime import datetime
+from enum import auto
+from functools import cached_property
 from typing import NamedTuple
 
 import asyncpg
-import asyncpraw
 import asyncprawcore
 import dataframe_image
 import dateparser
 import discord
 import pandas
 import pytz
-import tabulate
-import urllib3
 from asyncpraw.exceptions import InvalidURL
-from asyncpraw.models import Comment, Submission
+from asyncpraw.models import Subreddit
 from asyncprawcore import NotFound
 from dateutil.relativedelta import relativedelta
-from discord import AllowedMentions, Embed
+from discord import AllowedMentions
 from discord_slash.utils.manage_commands import create_option
 from PIL import Image
 
 from .utils.command_cog import CommandCog
 from .utils.commands import command
-from .utils.context import Context
-from .utils.slash import cog_slash
-from .utils.utils import gen_date_string, ordinal, parse_sql
+from .utils.embeds import Embed
+from .utils.slash import cog_slash, cog_subcommand
+from .utils.utils import ordinal, parse_sql
 
 
-def parse_date(date=None):
-    settings = dateparser.conf.Settings()
-    settings.PREFER_DAY_OF_MONTH = "first"
-    settings.RETURN_AS_TIMEZONE_AWARE = True
-    settings.TIMEZONE = "UTC"
-    settings.PREFER_DATES_FROM = "past"
-    try:
-        parsedDate = dateparser.parse(date)
-        return parsedDate
-    except Exception:
-        return
+class Kind(enum.Flag):
+    SUBMISSIONS = auto()
+    COMMENTS = auto()
+    ALL = SUBMISSIONS & COMMENTS
+
+
+class ModQueueCounter:
+    def __init__(self, context, subreddit: Subreddit, kind=Kind.ALL, update_interval=200):
+        self.context = context
+        self.subreddit = subreddit
+        self.kind = kind
+        self.update_interval = update_interval
+
+        self.submissions = set()
+        self.comments = set()
+
+        self.done = False
+        self.errored = False
+        self.status = "Starting"
+
+        self._embed: discord.Embed = None
+        self.message: discord.Message = None
+
+    @property
+    def submission_count(self):
+        return len(self.submissions)
+
+    @property
+    def comment_count(self):
+        return len(self.comments)
+
+    @property
+    def total(self):
+        return self.submission_count + self.comment_count
+
+    @property
+    def embed(self) -> Embed:
+        if not self._embed:
+            self._embed = Embed(title=f"r/{self.subreddit} Mod Queue Count")
+            self._embed.set_footer(text=datetime.now().astimezone().strftime("%B %d, %Y at %I:%M:%S %p %Z"))
+        self._embed.color = discord.Color.green() if self.done else discord.Color.orange()
+        self._embed.description = self.status if self.done else f"{self.status}..."
+        self._embed.clear_fields()
+        if self.kind in Kind.SUBMISSIONS:
+            self._embed.add_field(name="Posts", value=f"{self.submission_count:,}")
+        if self.kind in Kind.COMMENTS:
+            self._embed.add_field(name="Comments", value=f"{self.comment_count:,}")
+        if self.kind in Kind.ALL:
+            self._embed.add_field(name="Total", value=f"{self.total:,}", inline=False)
+        return self._embed
+
+    async def _maybe_update_embed(self):
+        if self.total % self.update_interval == 0:
+            await self.message.edit(embed=self.embed)
+
+    async def start(self):
+        try:
+            self.status = "Starting"
+            self.message = await self.context.channel.send(embed=self.embed)
+
+            if self.kind in Kind.SUBMISSIONS:
+                self.status = "Counting Submissions"
+                async for item in self.subreddit.mod.modqueue(only="submissions", limit=None):
+                    self.submissions.add(item.id)
+                    await self._maybe_update_embed()
+            if self.kind in Kind.COMMENTS:
+                self.status = "Counting Comments"
+                async for item in self.subreddit.mod.modqueue(only="comments", limit=None):
+                    self.comments.add(item.id)
+                    await self._maybe_update_embed()
+            self.done = True
+            self.status = ""
+            await self.context.send(embed=self.embed)
+        except Exception as error:
+            self.context.bot.log.exception(error)
+            self.errored = True
+        await self.message.delete()
 
 
 class RedditStats(CommandCog):
@@ -69,53 +130,19 @@ class RedditStats(CommandCog):
             ),
             create_option("mod", "Only get actions made by this moderator.", str, False),
             create_option(
-                "limit", "Only fetch this number of actions. Maximum of 10,000 actions. Default to 10.", int, False
+                "limit", "Only fetch this number of actions. Maximum of 10,000 actions. Defaults to 10.", int, False
             ),
+            create_option("timezone", "Timezone to display the result in. Defaults to US/Central", str, False),
         ]
     )
-    async def action_history(
-        self,
-        context,
-        thing=None,
-        user=None,
-        mod=None,
-        limit=10,
-    ):
-        """Get recent mod actions preformed on a post, comment, or redditor. `thing` or `user` must be provided"""
+    async def action_history(self, context, thing=None, user=None, mod=None, limit=10, timezone="US/Central"):
+        """Get recent mod actions performed on a post, comment, or redditor. `thing` or `user` must be provided"""
         await context.defer()
-        subreddit = await self.get_sub_from_channel(context)
-        account = await self.get_authorized_user(context)
+        subreddit = await self.get_subreddit_instance(context)
+        reddit = subreddit._reddit
+        if not subreddit:
+            return
         kwargs = {}
-        if not account:
-            await self.error_embed(
-                context,
-                "This command requires a mod account. If you need more help, contact <@393801572858986496>.",
-            )
-            return
-        else:
-            try:
-                if account == "Lil_SpazJoekp":
-                    reddit = self.reddit
-                else:
-                    reddit = self.bot.get_reddit(account)
-                    if not subreddit in [sub.display_name for sub in (await (await reddit.user.me()).moderated())]:
-                        await self.error_embed(
-                            context,
-                            "The moderator account set for this subreddit is not a moderator. If you need more help, contact <@393801572858986496>.",
-                        )
-                        return
-            except Exception:
-                await self.error_embed(
-                    context,
-                    "The authorization for the moderator account set for this subreddit is not valid. If you need more help, contact <@393801572858986496>.",
-                )
-                return
-        if not reddit:
-            await self.error_embed(
-                context,
-                "This command requires an authenticated moderator account for this subreddit. If you need more help, contact <@393801572858986496>.",
-            )
-            return
         if thing and user:
             await self.error_embed(context, "`thing` and `user` are mutually exclusive.")
             return
@@ -126,6 +153,15 @@ class RedditStats(CommandCog):
             await self.error_embed(
                 context,
                 "Please specify a limit of ≤10,000 or omit it completely. If you ***need*** more logs, please contact <@393801572858986496>",
+                contact_me=False,
+            )
+            return
+        try:
+            timezone = pytz.timezone(timezone)
+        except pytz.UnknownTimeZoneError:
+            await self.error_embed(
+                context,
+                f"`{timezone}` is not a valid timezone. Please specify a timezone from this [list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List)",
             )
             return
         if thing:
@@ -186,7 +222,7 @@ class RedditStats(CommandCog):
                 return
         embed.description = f"Fetching last {limit:,} actions..."
         message = await context.channel.send(embed=embed)
-        await self.get_modlog(context, subreddit, limit=limit, item_kind=item_kind, **kwargs)
+        await self._get_modlog(context, subreddit, timezone, limit=limit, item_kind=item_kind, **kwargs)
         await message.delete()
 
     @cog_slash(
@@ -213,82 +249,52 @@ class RedditStats(CommandCog):
         use_toolbox_method=False,
     ):
         """Generate a toolbox like mod matrix. Must be used in your sub's channel. If you need help, ask Spaz."""
-        """Parameters:
-            start_date: Start date to get actions from. If not specified first day of current month is used. If the date has a space `"` or `'` are needed.
-            end_date: End date to get actions from. If not specified current day is used. If the date has a space `"` or `'` are needed.
-
-        Note: you can use a wide variety of date formats (e.g., today, yesterday, may, 1/1/2019 1/1/19, "mar 1", etc.) If it has a space in it, it must be quoted.
-
-        Examples: (Note this will have the dates as if you ran it right now)
-
-         To generate a matrix for r/pics between:
-          **`{none}`**
-          to
-          **`{today}`**```.matrix pics```
-         To generate a matrix for r/pics between:
-          **`{may}`**
-          to
-          **`{today}`**```.matrix pics may```
-         To generate a matrix for r/pics between:
-          **`{may_21}`**
-          to
-          **`{today}`**```.matrix pics "may 21"```
-         To generate a matrix for r/pics between:
-          **`{last_week}`**
-          to
-          **`{today}`**```.matrix pics "last week"```
-         To generate a matrix for r/pics between:
-          **`{april}`**
-          to
-          **`{may}`**```.matrix pics april may```
-         To generate a matrix for r/pics between:
-          **`{"1"}`**
-          to
-          **`{today}`**```.matrix pics 1```
-         To generate a matrix for r/pics between:
-          **`{1_22}`**
-          to
-          **`{today}`**```.matrix pics 1/22```
-         To generate a matrix for r/pics between:
-          **`{12_22_18}`**
-          to
-          **`{1_22_19}`**```.matrix pics 12/22/18 1/22/2019```
-         To generate a matrix for r/pics between:
-          **`{5_days_ago}`**
-          to
-          **`{today}`**```.matrix pics "5 days ago"```
-        If you are in a sub channel, the subreddit does not need to be specified.
-        If you have any questions ask Spaz.
-        """
         await context.defer()
         try:
-            start_date, end_date = await self.validate_dates(context, start_date, end_date)
+            start_date, end_date = await self._validate_dates(context, start_date, end_date)
             if start_date and end_date:
                 subreddit = await self.get_sub_from_channel(context)
-                if subreddit:
-                    embed = await self.generate_date_embed(start_date, end_date)
-                    message = await context.channel.send(embed=embed)
-                    if use_toolbox_method:
-                        redditor = await self.get_authorized_user(context)
-                        if redditor:
-                            reddit = self.bot.get_reddit(redditor)
-                            sub = await reddit.subreddit(subreddit)
-                        else:
-                            await self.error_embed(
-                                context,
-                                "`use_toolbox_method` requires a mod account. If you need more help, contact <@393801572858986496>.",
-                            )
-                            return
-                    else:
-                        sub = await self.reddit.subreddit(subreddit)
-                    await self.gen_matrix(
-                        context, sub, start_date, end_date, remove_empty_columns, use_toolbox_method, message
-                    )
-                else:
-                    await self.error_embed(context, "This command can only be used in a sub channel.")
+                if not subreddit:
                     return
+                embed = await self._gen_date_embed(start_date, end_date)
+                message = await context.channel.send(embed=embed)
+                if use_toolbox_method:
+                    redditor = await self.get_authorized_user(context)
+                    if redditor:
+                        reddit = self.bot.get_reddit(redditor)
+                        sub = await reddit.subreddit(subreddit)
+                    else:
+                        await self.error_embed(
+                            context,
+                            "`use_toolbox_method` requires a mod account.",
+                        )
+                        return
+                else:
+                    sub = await self.reddit.subreddit(subreddit)
+                await self._gen_matrix(
+                    context, sub, start_date, end_date, remove_empty_columns, use_toolbox_method, message
+                )
+
         except Exception as error:
             self.log.exception(error)
+
+    @cog_subcommand(
+        base="modqueue",
+        options=[
+            create_option("only", "What to count. Defaults to all.", str, False, choices=["All", "Posts", "Comments"]),
+        ],
+    )
+    async def count(self, context, only="All"):
+        """Counts number of items in the modqueue."""
+        await context.defer()
+        subreddit = await self.get_subreddit_instance(context, "posts")
+        if not subreddit:
+            return
+        kind_mapping = {"All": Kind.ALL, "Posts": Kind.SUBMISSIONS, "Comments": Kind.COMMENTS}
+        modqueue_counter = ModQueueCounter(context, subreddit, kind_mapping[only])
+        await modqueue_counter.start()
+        if modqueue_counter.errored:
+            await self.error_embed(context, "Failed to count modqueue.")
 
     @command(name="modstats", hidden=True, aliases=["ms"])
     async def _modstats(self, context, *args):
@@ -326,370 +332,100 @@ class RedditStats(CommandCog):
         if error_message:
             await self.error_embed(context, error_message)
         if redditor:
-            await self.calculate_and_send(context, redditor)
+            await self._calculate_and_send(context, redditor)
 
-    @command()
-    async def traffic(self, context, *subreddits: str):
-        """
-        Gets traffic for [subreddit(s)]
-
-        Parameters:
-            subreddit(s): a single subreddit or subreddits separated by spaces
-
-        Examples:
-         ```.traffic``` in sub channel
-         ```.traffic dankmemes```
-         ```.traffic dankmemes memes```
-        """
-        async with context.typing():
-            if subreddits:
-                for subreddit in subreddits:
-                    await self.parseTraffic(subreddit, context)
-            else:
-                subreddit = await self.get_sub_from_channel(context)
-                if subreddit:
-                    await self.parseTraffic(subreddit, context)
-                else:
-                    await self.error_embed(
-                        context,
-                        "Please use this command in a sub channel or specify sub.",
-                    )
-
-    @command(aliases=["lma"])
-    async def lastmodaction(self, context, *moderators):
-        """
-        Gets last mod action for yourself or `moderator(s)`
-
-        Parameters:
-            moderators: a single moderator or moderators separated by spaces
-
-        Examples:
-         ```.lastmodaction``` for yourself
-         ```.lastmodaction Lil_SpazJoekp```
-         ```.lastmodaction Lil_SpazJoekp siouxsie_siouxv2```
-        """
-        async with context.typing():
-            # globalMods, subs, multis = await self.parseLmaKwargs(moderators)
-            if not moderators:
-                author = context.message.author
-                userID = author.id
-                encodedAuthor = hashlib.sha256(str(userID).encode("utf-8")).hexdigest()
-                results = parse_sql(await self.sql.fetch("SELECT * FROM verified WHERE id=$1", encodedAuthor))
-                if results:
-                    moderators = [results[0].redditor]
-                else:
-                    await self.error_embed(
-                        context,
-                        "Please a moderator or verify your Reddit account with `.verify`.",
-                    )
-            for moderator in moderators:
-                mod = await self.get_mod(context, moderator)
-                if mod:
-                    results = parse_sql(
-                        await self.sql.fetch(
-                            "SELECT * FROM mirror.modlog WHERE moderator=$1 ORDER BY created_utc DESC LIMIT 1",
-                            mod,
-                        )
-                    )
-                    if results:
-                        lastAction = results[0]
-                        embed = self.gen_action_embed(lastAction)
-                        await context.send(embed=embed)
-                    else:
-                        await self.error_embed(
-                            context,
-                            f"Could not find any action performed by [u/{mod}](https://reddit.com/user/{mod})",
-                        )
-
-    async def parseLmaKwargs(self, context, args):
-        """
-
-        :param args:
-        :return:
-        """
-        kwargs = {}
-        validKwargs = ["sub", "subreddit", "action", "multi", "multireddit"]
-        kwargMapping = {
-            "sub": "sub",
-            "subreddit": "sub",
-            "action": "action",
-            "multi": "multi",
-            "multireddit": "multi",
-        }
-        validKwargStr = ", ".join(
-            [arg if not validKwargs.index(arg) + 1 == len(validKwargs) else f"and {arg}" for arg in validKwargs]
+    async def _calculate_and_send(self, context, user):
+        (
+            remaining,
+            sub_average,
+            sub_count,
+            subreddits,
+            subscribers,
+            zero_count,
+        ) = await self.get_and_calculate_subs(user)
+        embed = self._gen_embed(user, sub_count, subscribers, sub_average, remaining, zero_count)
+        value_string = "\n".join(
+            [f"{sub_rank}. {subreddit[0]}: {subreddit[1]:,}" for sub_rank, subreddit in enumerate(subreddits[:20], 1)]
         )
-        subGroups = {}
-        multiGroups = {}
-        regex = r"((sub|subreddit|multi|multireddit)=(.*?( |$)))"
-        argStr = " ".join(args)
-        mods = []
-        groups = []
-        for arg in args:
-            if any([i in arg for i in validKwargs]):
-                if arg == "multi" or arg == "multireddit":
-                    mods = []
-                # mods = []
-            else:
-                mods.append(arg)
-
-        for arg in args:
-            splitArg = arg.split("=")
-            splitArg.reverse()
-            kwarg = splitArg.pop()
-            splitArg.reverse()
-            if kwarg in validKwargs:
-                kwargs[kwargMapping[kwarg]] = "".join(splitArg)
-            else:
-                # print(f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...")
-                await self.error_embed(
-                    context,
-                    f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...",
-                )
-        return kwargs
-
-    async def parseTraffic(self, subreddit, context):
-        daystr = "Date,Uniques,Pageviews,Subscriptions"
-        hourstr = "Date,Uniques,Pageviews"
-        monthstr = "Date,Uniques,Pageviews"
-        subResults = await self.checkSub(context, subreddit)
-        if subResults:
-            subreddit = subResults["subreddit"]
-            sub = await self.reddit.subreddit(subreddit)
-            subreddit = sub.display_name
-            if subResults["isMod"]:
-                traffic = await sub.traffic()
-                for day in traffic["day"]:
-                    date = gen_date_string(day[0], True, "%m/%d/%Y")
-                    daystr += f"\n{date},{day[1]},{day[2]},{day[3]}"
-                with open(f"Daily Traffic Stats for {subreddit}.csv", "w") as csv:
-                    csv.write(daystr)
-
-                for hour in traffic["hour"]:
-                    date = gen_date_string(hour[0], True, "%m/%d/%Y %I %p %Z")
-                    hourstr += f"\n{date},{hour[1]},{hour[2]}"
-                with open(f"Hourly Traffic Stats for {subreddit}.csv", "w") as csv:
-                    csv.write(hourstr)
-
-                for month in traffic["month"]:
-                    date = gen_date_string(month[0], True, "%B %Y")
-                    monthstr += f"\n{date},{month[1]},{month[2]}"
-                with open(f"Monthly Traffic Stats for {subreddit}.csv", "w") as csv:
-                    csv.write(monthstr)
-                files = [
-                    discord.File(f"Daily Traffic Stats for {subreddit}.csv"),
-                    discord.File(f"Hourly Traffic Stats for {subreddit}.csv"),
-                    discord.File(f"Monthly Traffic Stats for {subreddit}.csv"),
-                ]
-                await context.send(files=files)
-                for file in files:
-                    os.remove(file.fp)
-            else:
-                await self.error_embed(context, f"You don't moderate r/{subreddit}")
-
-    async def parseKwargs(self, args, context):
-        kwargs = {}
-        validKwargs = [
-            "url",
-            "user",
-            "redditor",
-            "mod",
-            "moderator",
-            "sub",
-            "subreddit",
-            "limit",
-            "timezone",
-            "action",
-        ]
-        kwargMapping = {
-            "url": "url",
-            "mod": "mod",
-            "user": "user",
-            "redditor": "user",
-            "sub": "sub",
-            "limit": "limit",
-            "timezone": "timezone",
-            "moderator": "mod",
-            "subreddit": "sub",
-            "action": "action",
-        }
-        validKwargStr = ", ".join(
-            [arg if not validKwargs.index(arg) + 1 == len(validKwargs) else f"and {arg}" for arg in validKwargs]
-        )
-        for arg in args:
-            splitArg = arg.split("=")
-            splitArg.reverse()
-            kwarg = splitArg.pop()
-            splitArg.reverse()
-            if kwarg in validKwargs:
-                if kwarg == "action":
-                    if splitArg[0] in actionMapping:
-                        kwargs[kwargMapping[kwarg]] = "".join(splitArg)
-                    else:
-                        await self.error_embed(
-                            context,
-                            f"{splitArg} is not a valid action. Do `.validactions` to see valid actions.\nSkipping...",
-                        )
-                else:
-                    kwargs[kwargMapping[kwarg]] = "".join(splitArg)
-            else:
-                await self.error_embed(
-                    context,
-                    f"{kwarg} isn't a valid argument. Valid arguments are: {validKwargStr}\nSkipping...",
-                )
-        return kwargs
-
-    async def checkUrl(self, context, url: str):
-        self.log.info("Checking url")
-        reddit = self.reddit
-        userRegex = r"https?:\/\/(www\.|old\.|new\.)?reddit\.com\/(user|u)/.*?$"
-        match = re.search(userRegex, url, re.MULTILINE)
-        if match:
-            user = urllib3.util.parse_url(match[0]).path
-            if user[-1] == "/":
-                user = user[:-1].split("/")[-1]
-            else:
-                user = user.split("/")[-1]
-            try:
-                redditor = await reddit.redditor(user)
-                return redditor
-            except asyncprawcore.NotFound:
-                await self.error_embed(context, f"Could not find u/{user}")
-        else:
-            urlRegex = r"https?:\/\/(((www\.|old\.|new\.)?reddit\.com)|redd\.it)\/"
-            match = re.search(urlRegex, url, re.MULTILINE)
-            if match:
-                try:
-                    thing = reddit.comment(url=url)
-                    return thing
-                except asyncpraw.exceptions.ClientException:
-                    try:
-                        thing = reddit.submission(url=url)
-                        return thing
-                    except Exception as error:
-                        self.log.error(error)
-                        self.log.info(error)
-                        await self.error_embed(context, "Hmm..that url didn't work")
-                except Exception as error:
-                    self.log.error(error)
-                    self.log.info(error)
-                    await self.error_embed(context, "Hmm..that url didn't work")
-
-    async def get_modlog(
-        self,
-        context,
-        subreddit,
-        target_id=None,
-        target_author=None,
-        moderator=None,
-        limit=10,
-        item_kind=None,
-    ):
-        try:
-            self.log.info("Getting Logs")
-            sql_str = (
-                "SELECT created_utc, moderator, mod_action, details, description FROM mirror.modlog WHERE subreddit=$1"
+        embed.add_field(name="Top 20 Subreddits", value=value_string, inline=False)
+        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", user))
+        if results:
+            redditor = results[0]
+            user = redditor.redditor
+            formatted_time = datetime.astimezone(redditor.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
+            previous_subscriber_count = redditor.subscribers
+            previous_sub_count = redditor.subreddits
+            embed.set_footer(
+                text=f"{sub_count - previous_sub_count:+,} Subreddits and {subscribers - previous_subscriber_count:+,} Subscribers since I last checked on {formatted_time}"
             )
-            parts = [sql_str]
-            data = [subreddit]
-            names = [subreddit]
-            suffix = "action_history"
+        else:
+            embed.set_footer(text=f"{sub_count:+,} Subreddits and {subscribers:+,} Subscribers")
+        data = (user, sub_count, subscribers)
+        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor=$1", user))
+        if results:
+            await self.sql.execute(
+                "UPDATE public.moderators SET subreddits=$2, subscribers=$3 WHERE redditor=$1",
+                *data,
+            )
+        else:
+            await self.sql.execute(
+                "INSERT INTO public.moderators(redditor, subreddits, subscribers) VALUES ($1, $2, $3)",
+                *data,
+            )
+        await context.send(embed=embed)
 
-            def next_arg(column, value):
-                parts.append("AND")
-                parts.append(f"{column}=${len(data)+1}")
-                data.append(value)
-
-            if target_id:
-                next_arg("target_id", target_id)
-                names.append(target_id)
+    def _check_date(self, date, *, last_month=False, current_month=False, today=False):
+        parsed_date = None
+        if date:
+            if isinstance(date, int):
+                if 1 <= date <= 12:
+                    parsed_date = self.parse_date(date)
             else:
-                next_arg("target_author", target_author)
-                names.append(target_author)
-            if moderator:
-                next_arg("moderator", moderator)
-                names.append(moderator)
-            parts.append(f"ORDER BY created_utc DESC LIMIT ${len(data)+1}")
-            data.append(limit)
-
-            results = parse_sql(await self.sql.fetch(" ".join(parts), *data))
-            if results:
-                header = {
-                    "index": "",
-                    "moderator": "Moderator",
-                    "mod_action": "Action",
-                    "created_utc": datetime.utcnow().astimezone().strftime("Timestamp (%Z)"),
-                    "details": "Details",
-                    "description": "Description",
-                }
-                rows = []
-                for index, action in enumerate(results, 1):
-                    row = [index]
-                    for column in list(header.keys())[1::]:
-                        if column == "created_utc":
-                            row.append(action.created_utc.astimezone().strftime("%m-%d-%Y %H:%M:%S"))
-                        elif column == "description":
-                            value = getattr(action, column)
-                            if value:
-                                row.append(value)
-                            else:
-                                del header[column]
-                        else:
-                            row.append(getattr(action, column))
-                    rows.append(row)
-                mod_str = f" by u/{moderator}" if moderator else ""
-                if target_author:
-                    target_str = f"u/{target_author}"
-                else:
-                    target_str = target_id
-
-                embed = Embed(
-                    title="Action History",
-                    description=f"Last {limit:,} actions on {item_kind.lower()} {target_str}{mod_str}",
+                parsed_date = self.parse_date(date)
+        else:
+            if today:
+                parsed_date = self.parse_date(time.strftime("%m/%d/%Y %I:%M:%S %p", time.gmtime()))
+            else:
+                if last_month:
+                    months = 1
+                if current_month:
+                    months = 0
+                parsed_date = self.parse_date(
+                    time.strftime(
+                        "%m",
+                        time.gmtime(datetime.timestamp(datetime.today() - relativedelta(months=months))),
+                    )
                 )
+        return parsed_date
 
-                df = pandas.DataFrame(rows, columns=header.values())
-                df.set_index("", inplace=True)
-                filename = "_".join(names + [suffix])
-                if len(rows) <= 40:
-                    th_props = [
-                        ("font-size", "11px"),
-                        ("text-align", "center"),
-                        ("font-weight", "bold"),
-                        ("color", "#dcddde"),
-                        ("background-color", "#202225"),
-                    ]
+    @staticmethod
+    async def _gen_date_embed(start_date, end_date):
+        embed = Embed(title="Generating Matrix", color=discord.Color.blurple())
+        embed.add_field(
+            name="Starting Date",
+            value=start_date.strftime(f"%B {ordinal(start_date.day)}, %Y"),
+        )
+        embed.add_field(
+            name="Ending Date",
+            value=end_date.strftime(f"%B {ordinal(end_date.day)}, %Y"),
+        )
+        return embed
 
-                    # Set CSS properties for td elements in dataframe
-                    td_props = [
-                        ("font-size", "11px"),
-                        ("text-align", "right"),
-                        ("color", "#dcddde"),
-                        ("background-color", "#202225"),
-                    ]
+    @staticmethod
+    def _gen_embed(user, sub_count, subscribers, sub_average, remaining, zero_count):
+        embed = discord.Embed(
+            title=f"Moderated Subreddit Stats for u/{user}",
+            url=f"https://www.reddit.com/user/{user}",
+        )
+        embed.add_field(name="Reddit Username", value=user)
+        embed.add_field(name="Subreddit Count", value=f"{sub_count:,}")
+        embed.add_field(name="Subscriber Count", value=f"{subscribers:,}")
+        embed.add_field(name="Avg. Subscriber Count", value=f"{sub_average:,}")
+        embed.add_field(name="Subreddits with 1 Subs", value=f"{remaining:,}")
+        embed.add_field(name="Subreddits with 0 Subs", value=f"{zero_count:,}")
+        return embed
 
-                    # Set table styles
-                    styles = [dict(selector="th", props=th_props), dict(selector="td", props=td_props)]
-
-                    styled = df.style.set_table_styles(styles)
-                    uncropped = io.BytesIO()
-                    dataframe_image.export(styled, uncropped, max_cols=-1)
-                    image = Image.open(uncropped)
-                    width, height = image.size
-                    matrix = io.BytesIO()
-                    image.crop((1, 1, width - 1, height - 1)).save(matrix, "png")
-                    matrix.seek(0)
-                    image = await self.bot.file_storage.send(file=discord.File(matrix, filename=f"{filename}.png"))
-                    embed.set_image(url=image.attachments[0].url)
-                csv_file = await self.bot.file_storage.send(
-                    file=discord.File(io.BytesIO(df.to_csv().encode()), filename=f"{filename}.csv")
-                )
-                embed.add_field(name="Download file", value=f"[{filename}.csv]({csv_file.attachments[0].url})")
-                await context.send(embed=embed)
-        except Exception as error:
-            self.log.exception(error)
-
-    async def gen_matrix(self, context, subreddit, start_date, end_date, remove_empty_columns, tb=False, message=None):
+    async def _gen_matrix(self, context, subreddit, start_date, end_date, remove_empty_columns, tb=False, message=None):
         try:
             async with self.sql.acquire() as sql:
                 if tb:
@@ -773,7 +509,7 @@ class RedditStats(CommandCog):
                     )
                     results = parse_sql(results)
                 action_types = set()
-                action_types = self._simply_mod_actions(action_types, results)
+                action_types = self._simplify_mod_actions(action_types, results)
                 mods = {result.moderator: {action: 0 for action in action_types} for result in results}
                 subMods = await subreddit.moderator()
                 for mod in subMods:
@@ -819,9 +555,156 @@ class RedditStats(CommandCog):
         except Exception as error:
             self.log.exception(error)
 
-    async def validate_dates(self, context, starting_date, ending_date):
-        start_date = await self.check_date(starting_date, current_month=True)
-        end_date = await self.check_date(ending_date, today=True)
+    async def _get_modlog(
+        self,
+        context,
+        subreddit,
+        timezone,
+        target_id=None,
+        target_author=None,
+        moderator=None,
+        limit=10,
+        item_kind=None,
+    ):
+        try:
+            self.log.info("Getting Logs")
+            sql_str = (
+                "SELECT created_utc, moderator, mod_action, details, description FROM mirror.modlog WHERE subreddit=$1"
+            )
+            parts = [sql_str]
+            data = [str(subreddit)]
+            names = [str(subreddit)]
+            suffix = "action_history"
+
+            def next_arg(column, value):
+                parts.append("AND")
+                parts.append(f"{column}=${len(data)+1}")
+                data.append(value)
+
+            if target_id:
+                next_arg("target_id", target_id)
+                names.append(target_id)
+            else:
+                next_arg("target_author", target_author)
+                names.append(target_author)
+            if moderator:
+                next_arg("moderator", moderator)
+                names.append(moderator)
+            parts.append(f"ORDER BY created_utc DESC LIMIT ${len(data)+1}")
+            data.append(limit)
+
+            results = parse_sql(await self.sql.fetch(" ".join(parts), *data))
+            if results:
+                header = {
+                    "index": "",
+                    "moderator": "Moderator",
+                    "mod_action": "Action",
+                    "created_utc": timezone.normalize(datetime.utcnow().astimezone(pytz.utc)).strftime(
+                        "Timestamp (%Z)"
+                    ),
+                    "details": "Details",
+                    "description": "Description",
+                }
+                rows = []
+                for index, action in enumerate(results, 1):
+                    row = [index]
+                    for column in list(header.keys())[1::]:
+                        if column == "created_utc":
+                            row.append(
+                                timezone.normalize(action.created_utc.astimezone(pytz.utc)).strftime(
+                                    "%m-%d-%Y %H:%M:%S"
+                                )
+                            )
+                        elif column == "description":
+                            value = getattr(action, column)
+                            if value:
+                                row.append(value)
+                            else:
+                                del header[column]
+                        else:
+                            row.append(getattr(action, column))
+                    rows.append(row)
+                mod_str = f" by u/{moderator}" if moderator else ""
+                if target_author:
+                    target_str = f"u/{target_author}"
+                else:
+                    target_str = target_id
+
+                embed = Embed(
+                    title="Action History",
+                    description=f"Last {limit:,} actions on {item_kind.lower()} {target_str}{mod_str}",
+                )
+
+                df = pandas.DataFrame(rows, columns=header.values())
+                df.set_index("", inplace=True)
+                filename = "_".join(names + [suffix])
+                if len(rows) <= 40:
+                    th_props = [
+                        ("font-size", "11px"),
+                        ("text-align", "center"),
+                        ("font-weight", "bold"),
+                        ("color", "#dcddde"),
+                        ("background-color", "#202225"),
+                    ]
+
+                    # Set CSS properties for td elements in dataframe
+                    td_props = [
+                        ("font-size", "11px"),
+                        ("text-align", "right"),
+                        ("color", "#dcddde"),
+                        ("background-color", "#202225"),
+                    ]
+
+                    # Set table styles
+                    styles = [dict(selector="th", props=th_props), dict(selector="td", props=td_props)]
+
+                    styled = df.style.set_table_styles(styles)
+                    uncropped = io.BytesIO()
+                    dataframe_image.export(styled, uncropped, max_cols=-1)
+                    image = Image.open(uncropped)
+                    width, height = image.size
+                    matrix = io.BytesIO()
+                    image.crop((1, 1, width - 1, height - 1)).save(matrix, "png")
+                    matrix.seek(0)
+                    image = await self.bot.file_storage.send(file=discord.File(matrix, filename=f"{filename}.png"))
+                    embed.set_image(url=image.attachments[0].url)
+                csv_file = await self.bot.file_storage.send(
+                    file=discord.File(io.BytesIO(df.to_csv().encode()), filename=f"{filename}.csv")
+                )
+                embed.add_field(name="Download file", value=f"[{filename}.csv]({csv_file.attachments[0].url})")
+                await context.send(embed=embed)
+        except Exception as error:
+            self.log.exception(error)
+
+    @staticmethod
+    def parse_date(date=None):
+        settings = dateparser.conf.Settings()
+        settings.PREFER_DAY_OF_MONTH = "first"
+        settings.RETURN_AS_TIMEZONE_AWARE = True
+        settings.TIMEZONE = "UTC"
+        settings.PREFER_DATES_FROM = "past"
+        try:
+            parsed_date = dateparser.parse(date)
+            return parsed_date
+        except Exception:
+            return
+
+    @staticmethod
+    def _simplify_action(result):
+        mod_action = result.mod_action
+        if "sticky" in mod_action or "lock" in mod_action:
+            mod_action += {"submission": "link", "link": "link", "comment": "comment"}[result.target_type.lower()]
+        return mod_action
+
+    def _simplify_mod_actions(self, action_types, results):
+        for result in results:
+            mod_action = self._simplify_action(result)
+            action_types.add(mod_action)
+        return action_types
+
+    async def _validate_dates(self, context, starting_date, ending_date):
+        start_date = self._check_date(starting_date, current_month=True)
+        end_date = self._check_date(ending_date, today=True)
         invalid_date = None
         if not start_date:
             invalid_date = starting_date
@@ -838,150 +721,6 @@ class RedditStats(CommandCog):
             await context.send(embed=self.generate_error_embed("Start date must be before end date"))
             return None, None
         return start_date, end_date
-
-    @staticmethod
-    async def generate_date_embed(start_date, end_date):
-        embed = Embed(title="Generating Matrix", color=discord.Color.blurple())
-        embed.add_field(
-            name="Starting Date",
-            value=start_date.strftime(f"%B {ordinal(start_date.day)}, %Y"),
-        )
-        embed.add_field(
-            name="Ending Date",
-            value=end_date.strftime(f"%B {ordinal(end_date.day)}, %Y"),
-        )
-        return embed
-
-    def _simply_mod_actions(self, action_types, results):
-        for result in results:
-            mod_action = self._simplify_action(result)
-            action_types.add(mod_action)
-        return action_types
-
-    @staticmethod
-    def _simplify_action(result):
-        mod_action = result.mod_action
-        if "sticky" in mod_action or "lock" in mod_action:
-            mod_action += {"submission": "link", "link": "link", "comment": "comment"}[result.target_type.lower()]
-        return mod_action
-
-    async def check_date(self, date, *, last_month=False, current_month=False, today=False):
-        parsed_date = None
-        if date:
-            if isinstance(date, int):
-                if 1 <= date <= 12:
-                    parsed_date = parse_date(date)
-            else:
-                parsed_date = parse_date(date)
-        else:
-            if today:
-                parsed_date = parse_date(time.strftime("%m/%d/%Y %I:%M:%S %p", time.gmtime()))
-            else:
-                if last_month:
-                    months = 1
-                if current_month:
-                    months = 0
-                parsed_date = parse_date(
-                    time.strftime(
-                        "%m",
-                        time.gmtime(datetime.timestamp(datetime.today() - relativedelta(months=months))),
-                    )
-                )
-        return parsed_date
-
-    def gen_embed(self, user, sub_count, subscribers, sub_average, remaining, zero_count):
-        embed = discord.Embed(
-            title=f"Moderated Subreddit Stats for u/{user}",
-            url=f"https://www.reddit.com/user/{user}",
-        )
-        embed.add_field(name="Reddit Username", value=user)
-        embed.add_field(name="Subreddit Count", value=f"{sub_count:,}")
-        embed.add_field(name="Subscriber Count", value=f"{subscribers:,}")
-        embed.add_field(name="Avg. Subscriber Count", value=f"{sub_average:,}")
-        embed.add_field(name="Subreddits with 1 Subs", value=f"{remaining:,}")
-        embed.add_field(name="Subreddits with 0 Subs", value=f"{zero_count:,}")
-        return embed
-
-    async def calculate_and_send(self, context, user):
-        (
-            remaining,
-            sub_average,
-            sub_count,
-            subreddits,
-            subscribers,
-            zero_count,
-        ) = await self.get_and_calculate_subs(user)
-        embed = self.gen_embed(user, sub_count, subscribers, sub_average, remaining, zero_count)
-        value_string = "\n".join(
-            [f"{sub_rank}. {subreddit[0]}: {subreddit[1]:,}" for sub_rank, subreddit in enumerate(subreddits[:20], 1)]
-        )
-        embed.add_field(name="Top 20 Subreddits", value=value_string, inline=False)
-        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", user))
-        if results:
-            redditor = results[0]
-            user = redditor.redditor
-            formatted_time = datetime.astimezone(redditor.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
-            previous_subscriber_count = redditor.subscribers
-            previous_sub_count = redditor.subreddits
-            embed.set_footer(
-                text=f"{sub_count - previous_sub_count:+,} Subreddits and {subscribers - previous_subscriber_count:+,} Subscribers since I last checked on {formatted_time}"
-            )
-        else:
-            embed.set_footer(text=f"{sub_count:+,} Subreddits and {subscribers:+,} Subscribers")
-        data = (user, sub_count, subscribers)
-        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor=$1", user))
-        if results:
-            await self.sql.execute(
-                "UPDATE public.moderators SET subreddits=$2, subscribers=$3 WHERE redditor=$1",
-                *data,
-            )
-        else:
-            await self.sql.execute(
-                "INSERT INTO public.moderators(redditor, subreddits, subscribers) VALUES ($1, $2, $3)",
-                *data,
-            )
-        await context.send(embed=embed)
-
-    def gen_action_embed(self, action):
-        embed = Embed(
-            title="Most Recent Mod Action",
-            description=f"Last action performed by [u/{action.moderator}](https://reddit.com/user/{action.moderator})",
-        )
-        embed.add_field(name="Action", value=actionMapping[action.mod_action])
-        embed.add_field(
-            name="Action Date/Time",
-            value=action.created_utc.astimezone(pytz.timezone("US/Pacific")).strftime("%B %d, %Y at %I:%M:%S %p %Z"),
-        )
-        if getattr(action, "subreddit", None):
-            subreddit = f"[{action.subreddit}](https://reddit.com/r/{action.subreddit})"
-        else:
-            subreddit = "None"
-        embed.add_field(name="Subreddit", value=subreddit)
-        embed.add_field(name="Details", value=getattr(action, "details", "None"))
-        embed.add_field(name="Description", value=getattr(action, "description", "None"))
-        if getattr(action, "target_title", None) and getattr(action, "target_permalink", None):
-            embed.add_field(
-                name="Target",
-                value=f"[{action.target_title}](https://reddit.com{action.target_permalink})",
-            )
-        else:
-            embed.add_field(name="Target", value="None")
-        if getattr(action, "target_author", None) and getattr(action, "target_author", None) != "":
-            if getattr(action, "target_author", None):
-                targetAuthor = f"[{action.target_author}](https://reddit.com/user/{action.target_author})"
-            else:
-                targetAuthor = "None"
-            embed.add_field(name="Target Author", value=targetAuthor)
-
-        if action.target_body:
-            bodySections = textwrap.wrap(action.target_body, 1021)
-            if len(bodySections) == 1:
-                embed.add_field(name="Target Body", value=f"{bodySections[0]}")
-            else:
-                embed.add_field(name="Target Body", value=f"{bodySections[0]}...")
-        score = None
-        self.log.debug(embed.to_dict())
-        return embed
 
 
 def setup(bot):

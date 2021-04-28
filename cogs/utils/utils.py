@@ -72,6 +72,13 @@ def resolve_sub(argument_name):
     return decorator
 
 
+def readable_list(items, inline_code=False):
+    items = [f"`{str(s)}`" if inline_code else str(s) for s in items]
+    if len(items) < 3:
+        return " and ".join(items)
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
+
+
 # def resolve_sub(f):
 #     @wraps(f)
 #     def decorator(*args, **kwargs):

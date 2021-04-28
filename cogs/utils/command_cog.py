@@ -11,7 +11,7 @@ from asyncpg import Pool
 from discord import Embed
 from discord.ext import commands
 
-from .utils import parse_sql
+from .utils import parse_sql, readable_list
 
 if TYPE_CHECKING:
     from ...bot import RedditModHelper
@@ -35,8 +35,14 @@ class CommandCog(commands.Cog):
         await context.send(embed=embed)
 
     @staticmethod
-    async def error_embed(context, message, delete_after=None):
-        embed = Embed(title="Command Error", color=discord.Color.red(), description=message)
+    async def error_embed(context, message, delete_after=None, contact_me=True):
+        embed = Embed(
+            title="Command Error",
+            color=discord.Color.red(),
+            description=f"{message}\n\nIf you need more help, contact <@393801572858986496>."
+            if contact_me
+            else message,
+        )
         embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         return await context.send(embed=embed, delete_after=delete_after)
 
@@ -163,6 +169,53 @@ class CommandCog(commands.Cog):
         else:
             return None
 
+    async def get_subreddit_instance(self, context, required_permissions=None):
+        subreddit = await self.get_sub_from_channel(context)
+        if not subreddit:
+            return
+        account = await self.get_authorized_user(context)
+        if required_permissions:
+            if isinstance(required_permissions, str):
+                required_permissions = [required_permissions]
+        else:
+            required_permissions = []
+        if not account:
+            await self.error_embed(
+                context,
+                "This command requires a mod account set for the subreddit.",
+            )
+            return
+        try:
+            if account == "Lil_SpazJoekp":
+                reddit = self.reddit
+            else:
+                reddit = self.bot.get_reddit(account)
+            subreddits = await (await reddit.user.me()).moderated()
+            if subreddit in subreddits:
+                sub = subreddits[subreddits.index(subreddit)]
+                mod_info = (await sub.moderator(account))[0]
+                has_all = "all" in mod_info.mod_permissions
+                if not has_all and not all(
+                    [
+                        required_permission in mod_info.mod_permissions
+                        for required_permission in required_permissions or mod_info.mod_permissions
+                    ]
+                ):
+                    await self.error_embed(
+                        context,
+                        f"The moderator account set for this subreddit does not have the adequate permissions to run this command. This command requires the {readable_list(required_permissions, True)} permission{'s' if len(required_permissions) > 1 else ''}.",
+                    )
+                    return
+            else:
+                await self.error_embed(context, "The moderator account set for this subreddit is not a moderator.")
+                return
+        except Exception:
+            await self.error_embed(
+                context, "The authorization for the moderator account set for this subreddit is not valid."
+            )
+            return
+        return sub
+
     async def get_bot_config(self, key):
         results = parse_sql(await self.bot.pool.fetch("SELECT * FROM settings WHERE key=$1", key))
         if len(results) > 0:
@@ -198,7 +251,8 @@ class CommandCog(commands.Cog):
         if results:
             return results[0][0]
         else:
-            return None
+            await self.error_embed(context, "This command can only be used in a sub channel.")
+            return
 
     async def get_redditor(self, context=None, member=None):
         if not member:

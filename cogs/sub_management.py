@@ -144,6 +144,7 @@ class SubredditManagement(CommandCog):
             await self.error_embed(
                 context,
                 f"u/{mod_account} does not have enough permissions. Please ensure they have at least `posts` permissions and try again.\n\nIf you have any questions, please contact <@393801572858986496>.",
+                contact_me=False,
             )
             return
         if alert_channel:
@@ -218,67 +219,13 @@ class SubredditManagement(CommandCog):
                     self.restart_stream()
                 except Exception as error:
                     self.log.exception(error)
-                    await self.error_embed(
-                        context, f"Failed to delete r/{subreddit}. Contact <@393801572858986496> for more help."
-                    )
+                    await self.error_embed(context, f"Failed to delete r/{subreddit}.")
             else:
                 await self.error_embed(
                     context, f"You must execute this command from that subreddit's channel (<#{result.channel_id}>)."
                 )
         else:
             await self.error_embed(context, f"r/{subreddit} has not been added to this bot.")
-
-    #
-    # @cog_subcommand(base='manage_sub', subcommand_group='update', options=[create_option("subreddit", "Subreddit to update.", str, True), create_option("mod_role", "New mod role.", discord.Role, True)])
-    # async def mod_role(self, context, subreddit, mod_role: discord.Role):
-    #     """Update subreddit mod role."""
-    #     print()
-    #     subreddit = await SubredditConverter().convert(context, subreddit)
-    #
-    # @cog_subcommand(base='manage_sub', subcommand_group='update', options=[create_option("subreddit", "Subreddit to update.", str, True), create_option("channel", "New mod channel.", discord.TextChannel, True)])
-    # async def channel(self, context, subreddit, channel: discord.TextChannel):
-    #     """Update subreddit mod channel."""
-    #     print()
-    #     subreddit = await SubredditConverter().convert(context, subreddit)
-    #
-    # @cog_subcommand(base='manage_sub', subcommand_group='update', options=[create_option("subreddit", "Subreddit to update.", str, True), create_option("mod_channel", "New mod mod account.", str, True)])
-    # async def mod_account(self, context, subreddit, mod_account):
-    #     """Update subreddit mod account."""
-    #     print()
-    #     subreddit = await SubredditConverter().convert(context, subreddit)
-    #     mod_account = await RedditorConverter().convert(context, mod_account)
-    #
-    # @cog_subcommand(base='manage_sub', subcommand_group='update', options=[create_option("subreddit", "Subreddit to update.", str, True), create_option("alert_channel", "New mod alert channel. Execute without any channel to clear.", discord.TextChannel, False)])
-    # async def alert_channel(self, context, subreddit, alert_channel: discord.TextChannel):
-    #     """Update subreddit mod alert channel."""
-    #     await context.defer()
-    #     subreddit = await SubredditConverter().convert(context, subreddit)
-    #     results = parse_sql(await self.sql.fetch('SELECT * FROM subreddits WHERE name=$1', subreddit))
-    #     if results:
-    #         result = results[0]
-    #         old_alert_channel = self.bot.get_channel(result.alert_channel_id)
-    #         if old_alert_channel:
-    #             if old_alert_channel != alert_channel:
-    #                 channel_webhooks = await old_alert_channel.webhooks()
-    #                 if channel_webhooks:
-    #                     for webhook in channel_webhooks:
-    #                         try:
-    #                             await webhook.delete()
-    #                         except Exception:
-    #                             pass
-    #             else:
-    #                 return
-    #         if alert_channel:
-    #             results = parse_sql(await self.sql.fetch('UPDATE subreddits SET alert_channel_id=$1 WHERE name=$2 RETURNING *', alert_channel.id, subreddit))
-    #             await self.create_or_update_alert_channel(context, subreddit, alert_channel)
-    #         else:
-    #             results = parse_sql(await self.sql.fetch('UPDATE subreddits SET alert_channel_id=$1 WHERE name=$2 RETURNING *', alert_channel, subreddit))
-    #             await self.sql.execute('DELETE FROM webhooks WHERE subreddit=$1', subreddit)
-    #         result = results[0]
-    #         embed = await self.generate_subreddit_embed('updated', subreddit, result=result)
-    #         await context.send(embed=embed)
-    #     else:
-    #         await self.error_embed(context, f"r/{subreddit} has not been added to this bot.")
 
     @cog_subcommand(base="manage_sub", options=[create_option("subreddit", "Subreddit to update.", str, True)])
     async def view(self, context, subreddit):
@@ -370,12 +317,12 @@ class SubredditManagement(CommandCog):
             reddit: praw.Reddit = self.bot.credmgr_bot.redditApp.reddit(mod_account)
             current_scopes = reddit.auth.scopes()
             if not set(required_scopes).issubset(current_scopes) and "*" not in current_scopes:
-                await self.error_embed(context, final_failed_message)
+                await self.error_embed(context, final_failed_message, contact_me=False)
                 return False
             else:
                 return True
         except Exception:
-            await self.error_embed(context, final_failed_message)
+            await self.error_embed(context, final_failed_message, contact_me=False)
             return False
 
 

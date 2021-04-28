@@ -165,5 +165,6 @@ def cache_ids(ids, i, total_chunks):
     cache.set_multi(ids)
     log.info(f"Caching chunk {i}/{total_chunks}..")
 
+
 if __name__ == "__main__":
     app.start()

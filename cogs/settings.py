@@ -25,29 +25,29 @@ class Settings(CommandCog):
     async def cog_check(self, context):
         return await self.bot.is_owner(context.author)
 
-    async def getType(self, context, value):
+    async def get_type(self, context, value):
         converter = None
         if isinstance(value, str):
             if value.startswith("["):
                 values = value.strip("[]").split(",")
-                return [await self.getType(context, value) for value in values]
+                return [await self.get_type(context, value) for value in values]
             elif value.startswith("{"):
                 removeExtraSpaces = re.compile(r"\s*([\{\}:,\[\]])\s*")
                 quoteWords = re.compile(r"([\{\[,:])*(\w)([,\]+:\}])")
-                spacesRemoved = removeExtraSpaces.sub("\\1", value)
-                if spacesRemoved:
-                    result = quoteWords.sub('\\1"\\2"\\3', spacesRemoved)
+                spaces_removed = removeExtraSpaces.sub("\\1", value)
+                if spaces_removed:
+                    result = quoteWords.sub('\\1"\\2"\\3', spaces_removed)
                     if result:
                         finalResult = result.replace("'", '"').replace(' "', ' \\"').replace('" ', '\\" ')
                         loadedJson = json.loads(finalResult)
                         if loadedJson:
                             finalJson = {}
                             for key, value in loadedJson.items():
-                                finalJson[key] = await self.getType(context, value)
+                                finalJson[key] = await self.get_type(context, value)
                             return finalJson
             elif value.startswith("("):
                 values = value.strip("()").split(",")
-                return [await self.getType(context, value) for value in values]
+                return [await self.get_type(context, value) for value in values]
             elif value.lower() == "true":
                 return True
             elif value.lower() == "false":
@@ -65,14 +65,15 @@ class Settings(CommandCog):
                 if item:
                     return item.id
         elif isinstance(value, list):
-            return [await self.getType(context, i) for i in value]
+            return [await self.get_type(context, i) for i in value]
         elif isinstance(value, tuple):
-            return [await self.getType(context, i) for i in list(value)]
+            return [await self.get_type(context, i) for i in list(value)]
         elif isinstance(value, dict):
-            return await self.getType(context, str(value))
+            return await self.get_type(context, str(value))
         return value
 
-    def sql_select(self, context, setting=None):
+    @staticmethod
+    def sql_select(context, setting=None):
         if setting:
             return context.db.fetch("SELECT * FROM settings WHERE key=$1", setting)
         else:
@@ -139,7 +140,7 @@ class Settings(CommandCog):
                 embed = Embed(title="Set Bot Config")
                 for setting in settings:
                     key = setting[0]
-                    configValue = await self.getType(context, setting[1])
+                    configValue = await self.get_type(context, setting[1])
                     if setting[1] == "all":
                         await self.error_embed(context, "Setting: `all` is not valid")
                         return
@@ -187,7 +188,7 @@ class Settings(CommandCog):
                 wasChanged = False
                 for setting in settings:
                     key = setting[0]
-                    value = await self.getType(context, setting[1])
+                    value = await self.get_type(context, setting[1])
                     existing = await self.get_bot_config(key)
                     if isinstance(existing, (list, tuple)):
                         if value in existing:
@@ -248,7 +249,7 @@ class Settings(CommandCog):
                 wasChanged = False
                 for setting in settings:
                     key = setting[0]
-                    value = await self.getType(context, setting[1])
+                    value = await self.get_type(context, setting[1])
                     existing = await self.get_bot_config(key)
                     if isinstance(existing, (list, tuple)):
                         if len(existing) > 0:

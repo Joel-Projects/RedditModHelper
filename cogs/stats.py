@@ -33,7 +33,10 @@ class GatewayHandler(logging.Handler):
         super().__init__(logging.INFO)
 
     def filter(self, record):
-        return record.name == "discord.gateway" or "Shard ID" in record.msg or "Websocket closed " in record.msg
+        if isinstance(record.msg, str):
+            return record.name == "discord.gateway" or "Shard ID" in record.msg or "Websocket closed " in record.msg
+        else:
+            return False
 
     def emit(self, record):
         self.cog.add_record(record)
@@ -646,8 +649,6 @@ class Stats(CommandCog):
         await self.webhook.send(embed=embed)
 
     def add_record(self, record):
-        # if self.bot.config.debug:
-        #     return
         self._gateway_queue.put_nowait(record)
 
     async def notify_gateway_status(self, record):

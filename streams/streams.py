@@ -17,6 +17,7 @@ from .models import Subreddit, Webhook
 
 manager = Manager()
 
+
 class ModLogStreams:
     STREAMS = ["admin_backlog", "admin_stream", "backlog", "stream"]
 
@@ -42,12 +43,16 @@ class ModLogStreams:
                 try:
                     if action:
                         data = map_values(action.__dict__, mapping, skip_keys)
-                        if data['id'] not in shared_cache:
+                        if data["id"] not in shared_cache:
                             to_send.append([data, admin, stream])
-                            log.info(f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
-                            shared_cache[data['id']] = 1
+                            log.info(
+                                f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
+                            )
+                            shared_cache[data["id"]] = 1
                         else:
-                            log.debug(f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                            log.debug(
+                                f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
+                            )
                     if (len(to_send) % 500 == 0 or action is None) and to_send:
                         ingest_action.chunks(to_send, 10,).apply_async(
                             priority=(2 if admin else 1) + (2 if stream else 0),
@@ -164,14 +169,20 @@ def main(cached_ids):
             )
         )
         for chunk, subreddit_chunk in enumerate(chunks, 1):
-            start_streaming("+".join([sub.display_name for sub in subreddit_chunk if sub]), "Lil_SpazJoekp", chunk, shared_cache, other_auth=True)
+            start_streaming(
+                "+".join([sub.display_name for sub in subreddit_chunk if sub]),
+                "Lil_SpazJoekp",
+                chunk,
+                shared_cache,
+                other_auth=True,
+            )
 
 
 def start_streaming(subreddit, redditor, chunk, shared_cache, other_auth=False):
     try:
         log.info(f"Building chunk {chunk} for r/{subreddit} using u/{redditor}...")
         if other_auth:
-            reddit = services.reddit(redditor, botName=f'SiouxBot_Log_Thread_{chunk}')
+            reddit = services.reddit(redditor, botName=f"SiouxBot_Log_Thread_{chunk}")
         else:
             reddit = services.reddit(redditor)
         reddit_params = reddit.config._settings
