@@ -532,7 +532,7 @@ class RedditStats(CommandCog):
                     df = df.loc[:, (df != 0).any(axis=0)]
                 filename = f'{subreddit.display_name}-matrix-{start_date.strftime("%m/%d/%Y")}-to-{end_date.strftime("%m/%d/%Y")}'
                 matrix = io.BytesIO()
-                dataframe_image.export(df, matrix, max_cols=-1, table_conversion="matplotlib")
+                dataframe_image.export(df, matrix, max_cols=-1, max_rows=-1, table_conversion="matplotlib")
                 matrix = io.BytesIO(matrix.getvalue())
                 image = await self.bot.file_storage.send(file=discord.File(matrix, filename=f"{filename}.png"))
                 csv_file = await self.bot.file_storage.send(
