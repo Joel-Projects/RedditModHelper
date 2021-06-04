@@ -3,6 +3,7 @@ from functools import partial
 from celery import Celery
 from discord import RequestsWebhookAdapter, Webhook
 from kombu import Exchange, Queue
+from psycopg2.extras import execute_values
 
 from . import cache, log, models
 from .utils import gen_action_embed
@@ -30,13 +31,13 @@ app.conf.task_queues = [
     Queue(
         "actions", mod_log_exchange, routing_key="mod_log.actions", queue_arguments={"x-max-priority": 2}, durable=False
     ),
-    # Queue(
-    #     "action_chunks",
-    #     mod_log_exchange,
-    #     routing_key="mod_log.action_chunks",
-    #     queue_arguments={"x-max-priority": 2},
-    #     durable=False,
-    # ),
+    Queue(
+        "action_chunks",
+        mod_log_exchange,
+        routing_key="mod_log.action_chunks",
+        queue_arguments={"x-max-priority": 2},
+        durable=False,
+    ),
 ]
 app.conf.task_default_queue = "default"
 app.conf.task_default_exchange = "default"
@@ -104,47 +105,47 @@ def ingest_action(self, data, admin, is_stream):
         self.retry()
 
 
-# @app.task(bind=True, ignore_result=True)
-# def ingest_action_chunk(self, actions, admin):
-#     try:
-#         columns = [
-#             "id",
-#             "created_utc",
-#             "moderator",
-#             "subreddit",
-#             "mod_action",
-#             "details",
-#             "description",
-#             "target_author",
-#             "target_body",
-#             "target_type",
-#             "target_id",
-#             "target_permalink",
-#             "target_title",
-#         ]
-#         results = []
-#         with self.pool as sql:
-#             try:
-#                 results = execute_values(
-#                     sql,
-#                     CHUNK_QUERY,
-#                     [tuple([data.get(key, None) for key in columns] + [False, "insert"]) for data in actions],
-#                     fetch=True,
-#                 )
-#             except Exception as error:
-#                 log.exception(error)
-#                 self.retry()
-#         cache.add_multi({data["id"]: data["id"] for data in actions})
-#         for i, modlog_item in enumerate(results):
-#             new = modlog_item.new
-#             data = actions[i]
-#             status = "Past new" if new else "Past old"
-#             getattr(log, "info" if new else "debug")(
-#                 f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
-#             )
-#     except Exception as error:
-#         log.exception(error)
-#         self.retry()
+@app.task(bind=True, ignore_result=True)
+def ingest_action_chunk(self, actions, admin):
+    try:
+        columns = [
+            "id",
+            "created_utc",
+            "moderator",
+            "subreddit",
+            "mod_action",
+            "details",
+            "description",
+            "target_author",
+            "target_body",
+            "target_type",
+            "target_id",
+            "target_permalink",
+            "target_title",
+        ]
+        results = []
+        with self.pool as sql:
+            try:
+                results = execute_values(
+                    sql,
+                    CHUNK_QUERY,
+                    [tuple([data.get(key, None) for key in columns] + [False, "insert"]) for data in actions],
+                    fetch=True,
+                )
+            except Exception as error:
+                log.exception(error)
+                self.retry()
+        cache.add_multi({data["id"]: data["id"] for data in actions})
+        for i, modlog_item in enumerate(results):
+            new = modlog_item.new
+            data = actions[i]
+            status = "Past new" if new else "Past old"
+            getattr(log, "info" if new else "debug")(
+                f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
+            )
+    except Exception as error:
+        log.exception(error)
+        self.retry()
 
 
 @app.task(ignore_result=True)
@@ -158,12 +159,6 @@ def send_admin_alert(action, webhook):
         embed=embed,
     )
     log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")
-
-
-@app.task(ignore_result=True)
-def cache_ids(ids, i, total_chunks):
-    cache.set_multi(ids)
-    log.info(f"Caching chunk {i}/{total_chunks}..")
 
 
 if __name__ == "__main__":
