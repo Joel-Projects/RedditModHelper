@@ -3,7 +3,8 @@ import time
 from datetime import datetime, timedelta
 from functools import partial
 from itertools import zip_longest
-from multiprocessing import Manager, Process, freeze_support
+from multiprocessing import Process, freeze_support
+from shared_memory_dict import SharedMemoryDict
 
 import praw
 from credmgr.exceptions import NotFound
@@ -36,7 +37,7 @@ class ModLogStreams:
                     log.info(
                         f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                     )
-                    shared_cache[data["id"]] = 1
+                    shared_cache["cache"].append(data["id"])
             ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
 
     def _stream(self, admin, modlog, stream, shared_cache):
@@ -46,12 +47,12 @@ class ModLogStreams:
                 try:
                     if action:
                         data = map_values(action.__dict__, mapping, skip_keys)
-                        if data["id"] not in shared_cache:
+                        if data["id"] not in shared_cache["cache"]:
                             to_send.append([data, admin, stream])
                             log.info(
                                 f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                             )
-                            shared_cache[data["id"]] = 1
+                            shared_cache["cache"].append(data["id"])
                         else:
                             log.debug(
                                 f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
@@ -70,7 +71,7 @@ class ModLogStreams:
     def check_cache_multi(items, shared_cache):
         to_ingest = []
         for item in items:
-            if item["id"] not in shared_cache:
+            if item["id"] not in shared_cache["cache"]:
                 to_ingest.append(item)
         return to_ingest
 
@@ -121,11 +122,10 @@ class ModLogStreams:
         self._stream(admin, modlog, stream, shared_cache)
 
 
-def main(cached_ids):
+def main(shared_cache):
     subreddits = Subreddit.query.all()
     to_set = {}
     accounts = {}
-    shared_cache = manager.dict(cached_ids)
     for subreddit in subreddits:
         accounts.setdefault(subreddit.modlog_account, [])
         accounts[subreddit.modlog_account].append(subreddit.name)
@@ -194,7 +194,7 @@ def set_cache():
     # for i, result_chunk in enumerate(chunks, 1):
     #     cache_ids.delay({result.id: 1 for result in result_chunk}, i, total_chunks)
     log.info("Cache set")
-    return {result.id: 1 for result in results}
+    return [result.id for result in results]
 
 
 def set_webhooks():
@@ -214,12 +214,13 @@ def set_webhooks():
 
 if __name__ == "__main__":
     freeze_support()
-    manager = Manager()
     try:
+        shared_cache = SharedMemoryDict(name="cache", size=100000000)
         cache.flush_all()
         cached_ids = set_cache()
+        shared_cache["cache"] = cached_ids
         set_webhooks()
-        main(cached_ids)
+        main(shared_cache)
         while True:
             set_webhooks()
             time.sleep(30)

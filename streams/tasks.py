@@ -66,8 +66,8 @@ def ingest_action(self, data, admin, is_stream):
             "target_title",
         ]
         new = cache.get(data["id"]) != 1
-        with self.pool as sql:
-            if new:
+        if new:
+            with self.pool as sql:
                 try:
                     sql.execute(QUERY, [data.get(key, None) for key in columns])
                     modlog_item = sql.fetchone()
@@ -84,7 +84,7 @@ def ingest_action(self, data, admin, is_stream):
         getattr(log, "info" if status in ["New", "Past new"] else "debug")(
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
-        if admin and new and is_stream:
+        if admin:
             sql.execute("SELECT pinged FROM mirror.modlog WHERE id=%s", (data["id"],))
             modlog_item = sql.fetchone()
             if modlog_item:
@@ -95,7 +95,7 @@ def ingest_action(self, data, admin, is_stream):
                         subreddit = models.Webhook.query.get(data["subreddit"])
                         if subreddit:
                             webhook = subreddit.admin_webhook
-                    if webhook and new:
+                    if webhook and not pinged:
                         send_admin_alert.apply_async(args=[data, webhook], queue="admin_alerts")
                         sql.execute("UPDATE mirror.modlog SET pinged=true WHERE id=%s", (data["id"],))
             else:
@@ -153,9 +153,10 @@ def send_admin_alert(action, webhook):
     webhook = Webhook(webhook)
     embed, get_more = gen_action_embed(action)
     webhook.send(
-        f"To see the entire body run this command:\n`.getbody https://reddit.com{action['target_permalink']}`"
-        if get_more
-        else None,
+        # f"To see the entire body run this command:\n`.getbody https://reddit.com{action['target_permalink']}`"
+        # if get_more
+        # else None,
+        None,
         embed=embed,
     )
     log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")
