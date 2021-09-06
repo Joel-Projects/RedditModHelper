@@ -85,22 +85,7 @@ def ingest_action(self, data, admin, is_stream):
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin:
-            with self.pool as sql:
-                sql.execute("SELECT pinged FROM mirror.modlog WHERE id=%s", (data["id"],))
-                modlog_item = sql.fetchone()
-                if modlog_item:
-                    pinged = modlog_item.pinged
-                    if not pinged:
-                        webhook = cache.get(f"{data['subreddit']}_admin_webhook")
-                        if not webhook:
-                            subreddit = models.Webhook.query.get(data["subreddit"])
-                            if subreddit:
-                                webhook = subreddit.admin_webhook
-                        if webhook and not pinged:
-                            send_admin_alert.apply_async(args=[data, webhook], queue="admin_alerts")
-                            sql.execute("UPDATE mirror.modlog SET pinged=true WHERE id=%s", (data["id"],))
-                else:
-                    self.retry()
+            check_admin(self, data)
     except Exception as error:
         log.exception(error)
         self.retry()
@@ -144,10 +129,30 @@ def ingest_action_chunk(self, actions, admin):
             getattr(log, "info" if new else "debug")(
                 f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
             )
+            if admin:
+                check_admin(self, data)
     except Exception as error:
         log.exception(error)
         self.retry()
 
+
+def check_admin(self, data):
+    with self.pool as sql:
+        sql.execute("SELECT pinged FROM mirror.modlog WHERE id=%s", (data["id"],))
+        modlog_item = sql.fetchone()
+        if modlog_item:
+            pinged = modlog_item.pinged
+            if not pinged:
+                webhook = cache.get(f"{data['subreddit']}_admin_webhook")
+                if not webhook:
+                    subreddit = models.Webhook.query.get(data["subreddit"])
+                    if subreddit:
+                        webhook = subreddit.admin_webhook
+                if webhook:
+                    send_admin_alert.apply_async(args=[data, webhook], queue="admin_alerts")
+                    sql.execute("UPDATE mirror.modlog SET pinged=true WHERE id=%s", (data["id"],))
+        else:
+            self.retry()
 
 @app.task(ignore_result=True)
 def send_admin_alert(action, webhook):
