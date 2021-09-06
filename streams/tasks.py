@@ -18,7 +18,7 @@ app = Celery(
     accept_content=["pickle"],
     result_serializer="pickle",
     task_serializer="pickle",
-    task_routes=["streams.routers.route_task"],
+    # task_routes=["streams.routers.route_task"],
 )
 app.config_from_object("streams.celery_config")
 default_exchange = Exchange("default", type="direct")
