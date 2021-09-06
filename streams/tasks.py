@@ -157,16 +157,19 @@ def check_admin(self, data):
 
 @app.task(ignore_result=True)
 def send_admin_alert(action, webhook):
-    webhook = Webhook(webhook)
-    embed, get_more = gen_action_embed(action)
-    webhook.send(
-        # f"To see the entire body run this command:\n`.getbody https://reddit.com{action['target_permalink']}`"
-        # if get_more
-        # else None,
-        None,
-        embed=embed,
-    )
-    log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")
+    try:
+        webhook = Webhook(webhook)
+        embed, get_more = gen_action_embed(action)
+        webhook.send(
+            # f"To see the entire body run this command:\n`.getbody https://reddit.com{action['target_permalink']}`"
+            # if get_more
+            # else None,
+            None,
+            embed=embed,
+        )
+        log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")
+    except Exception as error:
+        log.exception(error)
 
 
 if __name__ == "__main__":
