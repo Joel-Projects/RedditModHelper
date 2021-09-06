@@ -24,7 +24,8 @@ class ModLogStreams:
         self.reddit_params = reddit_params
         self.subreddit = subreddit
 
-    def _chunk(self, admin, modlog, shared_cache):
+    def _chunk(self, admin, modlog):
+        shared_cache = SharedMemoryDict('cache', size=100000000)
         for chunk in modlog:
             to_send = []
             mapped = list(
@@ -40,8 +41,9 @@ class ModLogStreams:
                     shared_cache["cache"].append(data["id"])
             ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
 
-    def _stream(self, admin, modlog, stream, shared_cache):
+    def _stream(self, admin, modlog, stream):
         to_send = []
+        shared_cache = SharedMemoryDict('cache', size=100000000)
         while True:
             for action in modlog:
                 try:
@@ -93,36 +95,36 @@ class ModLogStreams:
         # return modlog(**params)
         return modlog
 
-    def admin_backlog(self, shared_cache):
+    def admin_backlog(self):
         while True:
             admin = True
             stream = False
             modlog = self._get_modlog(admin, stream)
             # self._stream(admin, modlog, stream, shared_cache)
-            self._chunk(admin, modlog, shared_cache)
+            self._chunk(admin, modlog)
 
-    def admin_stream(self, shared_cache):
+    def admin_stream(self):
         admin = True
         stream = True
         modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream, shared_cache)
+        self._stream(admin, modlog, stream)
 
-    def backlog(self, shared_cache):
+    def backlog(self):
         while True:
             admin = False
             stream = False
             modlog = self._get_modlog(admin, stream)
             # self._stream(admin, modlog, stream, shared_cache)
-            self._chunk(admin, modlog, shared_cache)
+            self._chunk(admin, modlog)
 
-    def stream(self, shared_cache):
+    def stream(self):
         admin = False
         stream = True
         modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream, shared_cache)
+        self._stream(admin, modlog, stream)
 
 
-def main(shared_cache):
+def main():
     subreddits = Subreddit.query.all()
     to_set = {}
     accounts = {}
@@ -138,7 +140,7 @@ def main(shared_cache):
     cache.set_multi(to_set)
     for redditor, subreddits in accounts.items():
         for chunk, subreddit_chunk in enumerate([subreddits[x : x + 50] for x in range(0, len(subreddits), 50)]):
-            start_streaming("+".join(subreddit_chunk), redditor, chunk, shared_cache)
+            start_streaming("+".join(subreddit_chunk), redditor, chunk)
     if sys.platform != "darwin":
         subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
         chunks = list(
@@ -159,7 +161,7 @@ def main(shared_cache):
             )
 
 
-def start_streaming(subreddit, redditor, chunk, shared_cache, other_auth=False):
+def start_streaming(subreddit, redditor, chunk, other_auth=False):
     try:
         log.info(f"Building chunk {chunk} for r/{subreddit} using u/{redditor}...")
         if other_auth:
@@ -170,7 +172,7 @@ def start_streaming(subreddit, redditor, chunk, shared_cache, other_auth=False):
         subreddit_streams = ModLogStreams(reddit_params, subreddit)
         for stream in subreddit_streams.STREAMS:
             log.info(f"Starting {stream} for r/{subreddit}")
-            process = Process(target=getattr(subreddit_streams, stream), args=(shared_cache,), daemon=True)
+            process = Process(target=getattr(subreddit_streams, stream), daemon=True)
             process.start()
             log.info(f"Started {stream} for r/{subreddit} (PID: {process.pid})")
     except NotFound as error:
@@ -220,7 +222,7 @@ if __name__ == "__main__":
         cached_ids = set_cache()
         shared_cache["cache"] = cached_ids
         set_webhooks()
-        main(shared_cache)
+        main()
         while True:
             set_webhooks()
             time.sleep(30)
