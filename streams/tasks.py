@@ -139,10 +139,10 @@ def ingest_action_chunk(self, actions, admin):
 def check_admin(self, data):
     with self.pool as sql:
         sql.execute("SELECT pinged FROM mirror.modlog WHERE id=%s", (data["id"],))
-        log.info(data['id'])
         modlog_item = sql.fetchone()
         if modlog_item:
             pinged = modlog_item.pinged
+            log.info(pinged)
             if not pinged:
                 webhook = cache.get(f"{data['subreddit']}_admin_webhook")
                 if not webhook:
