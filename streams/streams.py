@@ -25,7 +25,7 @@ class ModLogStreams:
         self.subreddit = subreddit
 
     def _chunk(self, admin, modlog):
-        shared_cache = SharedMemoryDict('cache', size=100000000)
+        shared_cache = SharedMemoryDict("cache", size=100000000)
         for chunk in modlog:
             to_send = []
             mapped = list(
@@ -43,7 +43,7 @@ class ModLogStreams:
 
     def _stream(self, admin, modlog, stream):
         to_send = []
-        shared_cache = SharedMemoryDict('cache', size=100000000)
+        shared_cache = SharedMemoryDict("cache", size=100000000)
         while True:
             for action in modlog:
                 try:

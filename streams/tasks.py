@@ -155,6 +155,7 @@ def check_admin(self, data):
         else:
             self.retry()
 
+
 @app.task(ignore_result=True)
 def send_admin_alert(action, webhook):
     embed = None

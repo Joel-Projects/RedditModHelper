@@ -71,8 +71,8 @@ def gen_action_embed(action):
         embed.add_field(
             name="Moderator", value=f"[u/{action['moderator']}](https://reddit.com/user/{action['moderator']})"
         )
-    embed.add_field(name="Details", value=action.get("details", "None"))
-    embed.add_field(name="Description", value=action.get("description", "None"))
+    embed.add_field(name="Details", value=action.get("details", None) or "None")
+    embed.add_field(name="Description", value=action.get("description", None) or "None")
     title = action.get("target_title", None)
     permalink = action.get("target_permalink", None)
     if title and permalink:
