@@ -156,7 +156,6 @@ def main():
                 "+".join([sub.display_name for sub in subreddit_chunk if sub]),
                 "Lil_SpazJoekp",
                 chunk,
-                shared_cache,
                 other_auth=True,
             )
 
