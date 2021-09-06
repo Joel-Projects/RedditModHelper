@@ -80,8 +80,7 @@ def ingest_action(self, data, admin, is_stream):
         status = "New" if new else "Old"
         if not is_stream:
             status = f"Past {status.lower()}"
-
-        getattr(log, "info" if status in ["New", "Past new"] else "info")(
+        getattr(log, "info" if status in ["New", "Past new"] else "debug")(
             f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
         )
         if admin:
@@ -126,7 +125,7 @@ def ingest_action_chunk(self, actions, admin):
             new = modlog_item.new
             data = actions[i]
             status = "Past new" if new else "Past old"
-            getattr(log, "info" if new else "info")(
+            getattr(log, "info" if new else "debug")(
                 f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
             )
             if admin:
@@ -142,7 +141,6 @@ def check_admin(self, data):
         modlog_item = sql.fetchone()
         if modlog_item:
             pinged = modlog_item.pinged
-            log.info(pinged)
             if not pinged:
                 webhook = cache.get(f"{data['subreddit']}_admin_webhook")
                 if not webhook:
