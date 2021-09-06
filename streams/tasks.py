@@ -157,6 +157,7 @@ def check_admin(self, data):
 
 @app.task(ignore_result=True)
 def send_admin_alert(action, webhook):
+    embed = None
     try:
         webhook = Webhook(webhook)
         embed, get_more = gen_action_embed(action)
@@ -170,6 +171,8 @@ def send_admin_alert(action, webhook):
         log.info(f"Notifying r/{action['subreddit']} of admin action by u/{action['moderator']}")
     except Exception as error:
         log.exception(error)
+        if embed:
+            log.info(embed.to_dict())
 
 
 if __name__ == "__main__":
