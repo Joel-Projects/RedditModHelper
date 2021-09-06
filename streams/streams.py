@@ -82,6 +82,8 @@ class ModLogStreams:
         params = {}
         if admin:
             params["mod"] = "a"
+        else:
+            params["mod"] = "-a"
         if stream:
             params["pause_after"] = 0
             # modlog = subreddit.mod.stream.log
