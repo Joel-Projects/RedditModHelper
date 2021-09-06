@@ -31,7 +31,7 @@ class ModLogStreams:
             mapped = list(
                 map(partial(map_values, mapping=mapping, skip_keys=skip_keys), map(lambda item: item.__dict__, chunk))
             )
-            to_ingest = self.check_cache_multi(mapped, shared_cache, admin)
+            to_ingest = self.check_cache_multi(mapped, shared_cache)
             for to_ingest_chunk in [to_ingest[x : x + 10] for x in range(0, len(to_ingest), 10)]:
                 to_send.append([to_ingest_chunk, admin])
                 for data in to_ingest_chunk:
@@ -49,7 +49,7 @@ class ModLogStreams:
                 try:
                     if action:
                         data = map_values(action.__dict__, mapping, skip_keys)
-                        if data["id"] not in shared_cache["cache"] or admin:
+                        if data["id"] not in shared_cache["cache"]:
                             to_send.append([data, admin, stream])
                             log.info(
                                 f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
@@ -70,10 +70,10 @@ class ModLogStreams:
                 break
 
     @staticmethod
-    def check_cache_multi(items, shared_cache, admin):
+    def check_cache_multi(items, shared_cache):
         to_ingest = []
         for item in items:
-            if item["id"] not in shared_cache["cache"] or admin:
+            if item["id"] not in shared_cache["cache"]:
                 to_ingest.append(item)
         return to_ingest
 
