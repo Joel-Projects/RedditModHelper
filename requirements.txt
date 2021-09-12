@@ -1,4 +1,3 @@
-git+https://github.com/rapptz/discord-ext-menus@84caae8038d0d
 aiohttp
 asyncpg
 asyncpraw
@@ -20,16 +19,16 @@ matplotlib
 pandas
 parsedatetime
 Pillow
-praw
+praw==7.2.0
 psutil
 psycopg2-binary
 pylibmc
 python-dateutil
 python-gitlab
 pytz
+shared_memory_dict
 SQLAlchemy
 tabulate
 tzlocal
 urllib3
 uvloop
-
