@@ -19,7 +19,7 @@ matplotlib
 pandas
 parsedatetime
 Pillow
-praw==7.2.0
+praw
 psutil
 psycopg2-binary
 pylibmc
