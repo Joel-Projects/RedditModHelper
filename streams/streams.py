@@ -5,6 +5,7 @@ from functools import partial
 from itertools import zip_longest
 from multiprocessing import Process, freeze_support
 
+import prawcore
 import pylibmc
 from shared_memory_dict import SharedMemoryDict
 
@@ -25,6 +26,7 @@ class ModLogStreams:
     def __init__(self, reddit_params, subreddit):
         self.reddit_params = reddit_params
         self.subreddit = subreddit
+        self.reddit = None
 
     def _chunk(self, admin, modlog):
         for chunk in modlog:
@@ -45,7 +47,7 @@ class ModLogStreams:
     def _stream(self, admin, modlog, stream):
         to_send = []
         try:
-            for index, action in enumerate(modlog):
+            for action in modlog:
                 if action:
                     data = map_values(action.__dict__, mapping, skip_keys)
                     if not cache.add(data['id'], 1):
@@ -62,6 +64,9 @@ class ModLogStreams:
                         priority=(2 if admin else 1),
                         queue="actions",
                     )
+        except prawcore.ServerError as error:
+            log.exception(error)
+            log.info(self.subreddit, self.reddit.user.me())
         except Exception as error:
             log.exception(error)
 
@@ -91,7 +96,8 @@ class ModLogStreams:
         return to_ingest
 
     def _get_modlog(self, admin, stream):
-        subreddit = praw.Reddit(**self.reddit_params, timeout=30).subreddit(self.subreddit)
+        self.reddit = praw.Reddit(**self.reddit_params, timeout=30)
+        subreddit = self.reddit.subreddit(self.subreddit)
         params = {}
         if admin:
             params["mod"] = "a"
