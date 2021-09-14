@@ -44,29 +44,26 @@ class ModLogStreams:
 
     def _stream(self, admin, modlog, stream):
         to_send = []
-        while True:
+        try:
             for index, action in enumerate(modlog):
-                try:
-                    if action:
-                        data = map_values(action.__dict__, mapping, skip_keys)
-                        if not cache.add(data['id'], 1):
-                            to_send.append([data, admin, stream])
-                            log.info(
-                                f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
-                            )
-                        else:
-                            log.debug(
-                                f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
-                            )
-                    if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
-                        ingest_action.chunks(to_send, 10).apply_async(
-                            priority=(2 if admin else 1),
-                            queue="actions",
+                if action:
+                    data = map_values(action.__dict__, mapping, skip_keys)
+                    if not cache.add(data['id'], 1):
+                        to_send.append([data, admin, stream])
+                        log.info(
+                            f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                         )
-                except Exception as error:
-                    log.exception(error)
-            if not stream:
-                break
+                    else:
+                        log.debug(
+                            f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
+                        )
+                if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
+                    ingest_action.chunks(to_send, 10).apply_async(
+                        priority=(2 if admin else 1),
+                        queue="actions",
+                    )
+        except Exception as error:
+            log.exception(error)
 
     @staticmethod
     def check_cache_multi(items):
@@ -122,10 +119,11 @@ class ModLogStreams:
             self._chunk(admin, modlog)
 
     def admin_stream(self):
-        admin = True
-        stream = True
-        modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream)
+        while True:
+            admin = True
+            stream = True
+            modlog = self._get_modlog(admin, stream)
+            self._stream(admin, modlog, stream)
 
     def backlog(self):
         while True:
@@ -136,10 +134,11 @@ class ModLogStreams:
             self._chunk(admin, modlog)
 
     def stream(self):
-        admin = False
-        stream = True
-        modlog = self._get_modlog(admin, stream)
-        self._stream(admin, modlog, stream)
+        while True:
+            admin = False
+            stream = True
+            modlog = self._get_modlog(admin, stream)
+            self._stream(admin, modlog, stream)
 
 
 def main():
