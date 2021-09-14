@@ -170,7 +170,7 @@ def main():
             zip_longest(
                 *[
                     reversed(chunk) if i % 2 == 0 else chunk
-                    for i, chunk in enumerate([subreddits[x : x + 5] for x in range(0, len(subreddits), 5)])
+                    for i, chunk in enumerate([subreddits[x : x + 10] for x in range(0, len(subreddits), 10)])
                 ]
             )
         )
