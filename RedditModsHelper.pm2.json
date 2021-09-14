@@ -9,7 +9,7 @@
         {
             "name": "RedditModHelper-Celery",
             "script": ".venv/bin/celery",
-            "args": "-A streams.tasks worker -l info -c 4",
+            "args": "-A streams.tasks worker -l info -c 4 -P processes",
             "interpreter": ".venv/bin/python",
             "interpreter_args": "-u"
         },
@@ -17,8 +17,7 @@
             "name": "RedditModHelper-Stream",
             "script": "/bin/bash",
             "interpreter": ".venv/bin/python",
-            "interpreter_args": "-u -m streams.streams",
-            "cron_restart": "0 0/3 * * *"
+            "interpreter_args": "-u -m streams.streams"
         }
     ]
 }
