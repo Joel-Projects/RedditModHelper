@@ -14,7 +14,7 @@ from credmgr.exceptions import NotFound
 from praw.endpoints import API_PATH
 
 from streams.tasks import ingest_action, ingest_action_chunk
-from streams.utils import ChunkGenerator, map_values
+from streams.utils import ChunkGenerator, map_values, try_multiple
 
 from . import cache, connection_pool, log, mapping, services, skip_keys
 from .models import Subreddit, Webhook
@@ -50,7 +50,8 @@ class ModLogStreams:
             for action in modlog:
                 if action:
                     data = map_values(action.__dict__, mapping, skip_keys)
-                    if not cache.add(data['id'], 1):
+                    new = try_multiple(cache.add, (data['id'], 1), exception=pylibmc.Error, default_result=False)
+                    if not new:
                         to_send.append([data, admin, stream])
                         log.info(
                             f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
@@ -72,23 +73,7 @@ class ModLogStreams:
 
     @staticmethod
     def check_cache_multi(items):
-        try:
-            cached_items = cache.get_multi([item["id"] for item in items])
-        except pylibmc.Error as error:
-            max_attempts = 4
-            attempts = 0
-            while attempts < max_attempts:
-                attempts += 1
-                log.warning("Waiting 3 seconds before trying again")
-                time.sleep(3)
-                try:
-                    cached_items = cache.get_multi([item["id"] for item in items])
-                    break
-                except pylibmc.Error:
-                    pass
-            else:
-                log.exception(error)
-                cached_items = []
+        cached_items = try_multiple(cache.get_multi, [item["id"] for item in items], exception=pylibmc.Error, default_result=[])
         to_ingest = []
         for item in items:
             if item["id"] not in cached_items:

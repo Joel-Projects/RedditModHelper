@@ -1,5 +1,6 @@
 import itertools
 import textwrap
+import time
 from copy import copy
 
 from discord import Embed
@@ -135,3 +136,28 @@ class ChunkGenerator(ListingGenerator):
         self._list_index += len(self._listing)
         self.yielded += len(self._listing)
         return self._listing
+
+
+def try_multiple(func, args=None, kwargs=None, wait_time=3, max_attempts=3, default_result=None, exception=Exception):
+    from . import log
+    if not args:
+        args = ()
+    if not kwargs:
+        kwargs = {}
+    try:
+        result = func(*args, **kwargs)
+    except exception as error:
+        attempts = 0
+        while attempts < max_attempts:
+            try:
+                result = func(*args, **kwargs)
+                break
+            except exception:
+                pass
+            log.warning(f"Waiting {wait_time} seconds before trying again")
+            time.sleep(wait_time)
+            attempts += 1
+        else:
+            log.exception(error)
+            result = default_result
+    return result
