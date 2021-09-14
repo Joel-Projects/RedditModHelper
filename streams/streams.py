@@ -156,7 +156,7 @@ def main():
                     to_set[f"{subreddit.name}_{webhook_type}"] = webhook
     cache.set_multi(to_set)
     for redditor, subreddits in accounts.items():
-        for chunk, subreddit_chunk in enumerate([subreddits[x : x + 50] for x in range(0, len(subreddits), 50)]):
+        for chunk, subreddit_chunk in enumerate([subreddits[x : x + 3] for x in range(0, len(subreddits), 3)]):
             start_streaming("+".join(subreddit_chunk), redditor, chunk)
     if sys.platform != "darwin":
         subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
