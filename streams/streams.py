@@ -91,7 +91,7 @@ class ModLogStreams:
         return to_ingest
 
     def _get_modlog(self, admin, stream):
-        subreddit = praw.Reddit(**self.reddit_params).subreddit(self.subreddit)
+        subreddit = praw.Reddit(**self.reddit_params, timeout=30).subreddit(self.subreddit)
         params = {}
         if admin:
             params["mod"] = "a"
