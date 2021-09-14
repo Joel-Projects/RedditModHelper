@@ -73,7 +73,7 @@ class ModLogStreams:
 
     @staticmethod
     def check_cache_multi(items):
-        cached_items = try_multiple(cache.get_multi, [item["id"] for item in items], exception=pylibmc.Error, default_result=[])
+        cached_items = try_multiple(cache.get_multi, ([item["id"] for item in items],), exception=pylibmc.Error, default_result=[])
         to_ingest = []
         for item in items:
             if item["id"] not in cached_items:
