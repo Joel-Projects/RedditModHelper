@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from functools import partial
 from itertools import zip_longest
 from multiprocessing import Process, freeze_support
+
+import pylibmc
 from shared_memory_dict import SharedMemoryDict
 
 import praw
@@ -25,42 +27,39 @@ class ModLogStreams:
         self.subreddit = subreddit
 
     def _chunk(self, admin, modlog):
-        shared_cache = SharedMemoryDict("cache", size=100000000)
         for chunk in modlog:
             to_send = []
             mapped = list(
                 map(partial(map_values, mapping=mapping, skip_keys=skip_keys), map(lambda item: item.__dict__, chunk))
             )
-            to_ingest = self.check_cache_multi(mapped, shared_cache)
+            to_ingest = self.check_cache_multi(mapped)
             for to_ingest_chunk in [to_ingest[x : x + 10] for x in range(0, len(to_ingest), 10)]:
                 to_send.append([to_ingest_chunk, admin])
                 for data in to_ingest_chunk:
                     log.info(
                         f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                     )
-                    shared_cache["cache"].append(data["id"])
             ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
+            cache.set_multi({action['id']: 1 for action in to_ingest})
 
     def _stream(self, admin, modlog, stream):
         to_send = []
-        shared_cache = SharedMemoryDict("cache", size=100000000)
         while True:
-            for action in modlog:
+            for index, action in enumerate(modlog):
                 try:
                     if action:
                         data = map_values(action.__dict__, mapping, skip_keys)
-                        if data["id"] not in shared_cache["cache"]:
+                        if not cache.add(data['id'], 1):
                             to_send.append([data, admin, stream])
                             log.info(
                                 f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                             )
-                            shared_cache["cache"].append(data["id"])
                         else:
                             log.debug(
                                 f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                             )
-                    if (len(to_send) % 500 == 0 or action is None) and to_send:
-                        ingest_action.chunks(to_send, 10,).apply_async(
+                    if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
+                        ingest_action.chunks(to_send, 10).apply_async(
                             priority=(2 if admin else 1),
                             queue="actions",
                         )
@@ -70,10 +69,27 @@ class ModLogStreams:
                 break
 
     @staticmethod
-    def check_cache_multi(items, shared_cache):
+    def check_cache_multi(items):
+        try:
+            cached_items = cache.get_multi([item["id"] for item in items])
+        except pylibmc.Error as error:
+            max_attempts = 4
+            attempts = 0
+            while attempts < max_attempts:
+                attempts += 1
+                log.warning("Waiting 3 seconds before trying again")
+                time.sleep(3)
+                try:
+                    cached_items = cache.get_multi([item["id"] for item in items])
+                    break
+                except pylibmc.Error:
+                    pass
+            else:
+                log.exception(error)
+                cached_items = []
         to_ingest = []
         for item in items:
-            if item["id"] not in shared_cache["cache"]:
+            if item["id"] not in cached_items:
                 to_ingest.append(item)
         return to_ingest
 
@@ -190,12 +206,13 @@ def set_cache():
     sql.execute("SELECT id FROM mirror.modlog WHERE created_utc>=%s", (beginning_time,))
     results = sql.fetchall()
     connection_pool.putconn(conn)
-    # log.info(f"Caching {len(results):,} ids")
-    # chunk_size = 50000
-    # chunks = [results[x : x + chunk_size] for x in range(0, len(results), chunk_size)]
-    # total_chunks = len(chunks)
-    # for i, result_chunk in enumerate(chunks, 1):
-    #     cache_ids.delay({result.id: 1 for result in result_chunk}, i, total_chunks)
+    chunk_size = 50000
+    chunks = [{result.id: 1 for result in results[x: x + chunk_size]} for x in range(0, len(results), chunk_size)]
+    total_chunks = len(chunks)
+    log.info(f"Caching {len(results):,} ids ({total_chunks:,} chunks)")
+    for i, result_chunk in enumerate(chunks, 1):
+        cache.set_multi(result_chunk)
+        log.info(f'Chunk {i}/{total_chunks} set')
     log.info("Cache set")
     return [result.id for result in results]
 
@@ -218,10 +235,8 @@ def set_webhooks():
 if __name__ == "__main__":
     freeze_support()
     try:
-        shared_cache = SharedMemoryDict(name="cache", size=100000000)
         cache.flush_all()
-        cached_ids = set_cache()
-        shared_cache["cache"] = cached_ids
+        set_cache()
         set_webhooks()
         main()
         while True:
