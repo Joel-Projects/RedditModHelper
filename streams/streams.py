@@ -66,7 +66,7 @@ class ModLogStreams:
                         queue="actions",
                     )
         except prawcore.ServerError as error:
-            log.exception(error)
+            log.info(error)
             log.info((self.subreddit, self.reddit.user.me()))
         except Exception as error:
             log.exception(error)
