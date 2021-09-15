@@ -42,38 +42,45 @@ class ModLogStreams:
                         f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                     )
             ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
-            cache.set_multi({action['id']: 1 for action in to_ingest})
+            cache.set_multi({action["id"]: 1 for action in to_ingest})
 
     def _stream(self, admin, modlog, stream):
         to_send = []
-        try:
-            for action in modlog:
-                if action:
-                    data = map_values(action.__dict__, mapping, skip_keys)
-                    new = try_multiple(cache.add, (data['id'], 1), exception=pylibmc.Error, default_result=False)
-                    if not new:
-                        to_send.append([data, admin, stream])
-                        log.info(
-                            f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
-                        )
-                    else:
-                        log.debug(
-                            f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
-                        )
-                if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
-                    ingest_action.chunks(to_send, 10).apply_async(
-                        priority=(2 if admin else 1),
-                        queue="actions",
-                    )
-        except prawcore.ServerError as error:
-            log.info(error)
-            log.info((self.subreddit, self.reddit.user.me()))
-        except Exception as error:
-            log.exception(error)
+        while stream:
+            try:
+                for action in modlog:
+                    try:
+                        if action:
+                            data = map_values(action.__dict__, mapping, skip_keys)
+                            new = try_multiple(cache.add, (data["id"], 1), exception=pylibmc.Error, default_result=False)
+                            if not new:
+                                to_send.append([data, admin, stream])
+                                log.info(
+                                    f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
+                                )
+                            else:
+                                log.debug(
+                                    f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
+                                )
+                        if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
+                            ingest_action.chunks(to_send, 10).apply_async(
+                                priority=(2 if admin else 1),
+                                queue="actions",
+                            )
+                    except Exception as error:
+                        log.exception(error)
+            except prawcore.ServerError as error:
+                log.info(error)
+                log.info((self.subreddit, self.reddit.user.me()))
+            except Exception as error:
+                log.exception(error)
+                break
 
     @staticmethod
     def check_cache_multi(items):
-        cached_items = try_multiple(cache.get_multi, ([item["id"] for item in items],), exception=pylibmc.Error, default_result=[])
+        cached_items = try_multiple(
+            cache.get_multi, ([item["id"] for item in items],), exception=pylibmc.Error, default_result=[]
+        )
         to_ingest = []
         for item in items:
             if item["id"] not in cached_items:
@@ -197,12 +204,12 @@ def set_cache():
     results = sql.fetchall()
     connection_pool.putconn(conn)
     chunk_size = 50000
-    chunks = [{result.id: 1 for result in results[x: x + chunk_size]} for x in range(0, len(results), chunk_size)]
+    chunks = [{result.id: 1 for result in results[x : x + chunk_size]} for x in range(0, len(results), chunk_size)]
     total_chunks = len(chunks)
     log.info(f"Caching {len(results):,} ids ({total_chunks:,} chunks)")
     for i, result_chunk in enumerate(chunks, 1):
         cache.set_multi(result_chunk)
-        log.info(f'Chunk {i}/{total_chunks} set')
+        log.info(f"Chunk {i}/{total_chunks} set")
     log.info("Cache set")
     return [result.id for result in results]
 

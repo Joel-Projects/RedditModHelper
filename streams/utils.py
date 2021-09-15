@@ -140,6 +140,7 @@ class ChunkGenerator(ListingGenerator):
 
 def try_multiple(func, args=None, kwargs=None, wait_time=3, max_attempts=3, default_result=None, exception=Exception):
     from . import log
+
     if not args:
         args = ()
     if not kwargs:
