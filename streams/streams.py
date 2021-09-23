@@ -104,16 +104,16 @@ class ModLogStreams:
             params["mod"] = "-a"
         if stream:
             params["pause_after"] = 0
-            # modlog = subreddit.mod.stream.log
-            modlog = subreddit.mod.stream.log(**params)
+            modlog = subreddit.mod.stream.log
+            # modlog = subreddit.mod.stream.log(**params)
         else:
             params["limit"] = None
-            modlog = ChunkGenerator(
-                subreddit._reddit, API_PATH["about_log"].format(subreddit=subreddit), limit=None, params=params
-            )
-            # modlog = subreddit.mod.log
-        # return modlog(**params)
-        return modlog
+            # modlog = ChunkGenerator(
+            #     subreddit._reddit, API_PATH["about_log"].format(subreddit=subreddit), limit=None, params=params
+            # )
+            modlog = subreddit.mod.log
+        return modlog(**params)
+        # return modlog
 
     def admin_backlog(self):
         while True:
