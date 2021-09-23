@@ -72,7 +72,6 @@ class ModLogStreams:
             log.info((self.subreddit, self.reddit.user.me()))
         except Exception as error:
             log.exception(error)
-            break
 
     @staticmethod
     def check_cache_multi(items):
