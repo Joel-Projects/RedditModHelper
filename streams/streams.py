@@ -120,8 +120,8 @@ class ModLogStreams:
             admin = True
             stream = False
             modlog = self._get_modlog(admin, stream)
-            # self._stream(admin, modlog, stream, shared_cache)
-            self._chunk(admin, modlog)
+            self._stream(admin, modlog, stream)
+            # self._chunk(admin, modlog)
 
     def admin_stream(self):
         while True:
@@ -135,8 +135,8 @@ class ModLogStreams:
             admin = False
             stream = False
             modlog = self._get_modlog(admin, stream)
-            # self._stream(admin, modlog, stream, shared_cache)
-            self._chunk(admin, modlog)
+            self._stream(admin, modlog, stream)
+            # self._chunk(admin, modlog)
 
     def stream(self):
         while True:
