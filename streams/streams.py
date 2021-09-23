@@ -7,7 +7,6 @@ from multiprocessing import Process, freeze_support
 
 import prawcore
 import pylibmc
-from shared_memory_dict import SharedMemoryDict
 
 import praw
 from credmgr.exceptions import NotFound
@@ -46,35 +45,34 @@ class ModLogStreams:
 
     def _stream(self, admin, modlog, stream):
         to_send = []
-        while stream:
-            try:
-                for action in modlog:
-                    try:
-                        if action:
-                            data = map_values(action.__dict__, mapping, skip_keys)
-                            new = try_multiple(cache.add, (data["id"], 1), exception=pylibmc.Error, default_result=False)
-                            if not new:
-                                to_send.append([data, admin, stream])
-                                log.info(
-                                    f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
-                                )
-                            else:
-                                log.debug(
-                                    f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
-                                )
-                        if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
-                            ingest_action.chunks(to_send, 10).apply_async(
-                                priority=(2 if admin else 1),
-                                queue="actions",
+        try:
+            for action in modlog:
+                try:
+                    if action:
+                        data = map_values(action.__dict__, mapping, skip_keys)
+                        new = try_multiple(cache.add, (data["id"], 1), exception=pylibmc.Error, default_result=False)
+                        if not new:
+                            to_send.append([data, admin, stream])
+                            log.info(
+                                f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                             )
-                    except Exception as error:
-                        log.exception(error)
-            except prawcore.ServerError as error:
-                log.info(error)
-                log.info((self.subreddit, self.reddit.user.me()))
-            except Exception as error:
-                log.exception(error)
-                break
+                        else:
+                            log.debug(
+                                f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
+                            )
+                    if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
+                        ingest_action.chunks(to_send, 10).apply_async(
+                            priority=(2 if admin else 1),
+                            queue="actions",
+                        )
+                except Exception as error:
+                    log.exception(error)
+        except prawcore.ServerError as error:
+            log.info(error)
+            log.info((self.subreddit, self.reddit.user.me()))
+        except Exception as error:
+            log.exception(error)
+            break
 
     @staticmethod
     def check_cache_multi(items):
