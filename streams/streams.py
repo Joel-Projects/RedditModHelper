@@ -44,6 +44,7 @@ class ModLogStreams:
 
     def _stream(self, admin, modlog, stream):
         to_send = []
+        last_action = time.time()
         try:
             for action in modlog:
                 try:
@@ -59,12 +60,19 @@ class ModLogStreams:
                             log.debug(
                                 f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                             )
-                    if (len(to_send) % 500 == 0 or len(to_send) > 500 or admin or action is None) and to_send:
+                    if (
+                        len(to_send) % 500 == 0
+                        or len(to_send) > 500
+                        or admin
+                        or action is None
+                        or (time.time() - last_action) > 5  # send if last action was more than 5 seconds ago
+                    ) and to_send:
                         ingest_action.chunks(to_send, 10).apply_async(
                             priority=(2 if admin else 1),
                             queue="actions",
                         )
                         to_send = []
+                    last_action = time.time()
                 except Exception as error:
                     log.exception(error)
             if to_send:
