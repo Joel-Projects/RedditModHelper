@@ -5,10 +5,9 @@ from functools import partial
 from itertools import zip_longest
 from multiprocessing import Process, freeze_support
 
+import praw
 import prawcore
 import pylibmc
-
-import praw
 from credmgr.exceptions import NotFound
 from praw.endpoints import API_PATH
 
@@ -60,13 +59,16 @@ class ModLogStreams:
                             log.debug(
                                 f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                             )
-                    if (len(to_send) % 500 == 0 or admin or action is None) and to_send:
+                    if (len(to_send) % 500 == 0 or len(to_send) > 500 or admin or action is None) and to_send:
                         ingest_action.chunks(to_send, 10).apply_async(
                             priority=(2 if admin else 1),
                             queue="actions",
                         )
+                        to_send = []
                 except Exception as error:
                     log.exception(error)
+            if to_send:
+                ingest_action.chunks(to_send, 10).apply_async(priority=(2 if admin else 1), queue="actions")
         except prawcore.ServerError as error:
             log.info(error)
             log.info((self.subreddit, self.reddit.user.me()))
