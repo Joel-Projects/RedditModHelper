@@ -33,12 +33,14 @@ class ModLogStreams:
                 map(partial(map_values, mapping=mapping, skip_keys=skip_keys), map(lambda item: item.__dict__, chunk))
             )
             to_ingest = self.check_cache_multi(mapped)
+            print('to_ingest', len(to_ingest))
             for to_ingest_chunk in [to_ingest[x : x + 10] for x in range(0, len(to_ingest), 10)]:
                 to_send.append([to_ingest_chunk, admin])
                 for data in to_ingest_chunk:
                     log.info(
                         f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                     )
+            print('to_send', len(to_send))
             ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
             cache.set_multi({action["id"]: 1 for action in to_ingest})
 
@@ -104,24 +106,24 @@ class ModLogStreams:
             params["mod"] = "-a"
         if stream:
             params["pause_after"] = 0
-            modlog = subreddit.mod.stream.log
-            # modlog = subreddit.mod.stream.log(**params)
+            # modlog = subreddit.mod.stream.log
+            modlog = subreddit.mod.stream.log(**params)
         else:
             params["limit"] = None
-            # modlog = ChunkGenerator(
-            #     subreddit._reddit, API_PATH["about_log"].format(subreddit=subreddit), limit=None, params=params
-            # )
-            modlog = subreddit.mod.log
-        return modlog(**params)
-        # return modlog
+            modlog = ChunkGenerator(
+                subreddit._reddit, API_PATH["about_log"].format(subreddit=subreddit), limit=None, params=params
+            )
+            # modlog = subreddit.mod.log
+        # return modlog(**params)
+        return modlog
 
     def admin_backlog(self):
         while True:
             admin = True
             stream = False
             modlog = self._get_modlog(admin, stream)
-            self._stream(admin, modlog, stream)
-            # self._chunk(admin, modlog)
+            # self._stream(admin, modlog, stream)
+            self._chunk(admin, modlog)
 
     def admin_stream(self):
         while True:
@@ -135,8 +137,8 @@ class ModLogStreams:
             admin = False
             stream = False
             modlog = self._get_modlog(admin, stream)
-            self._stream(admin, modlog, stream)
-            # self._chunk(admin, modlog)
+            # self._stream(admin, modlog, stream)
+            self._chunk(admin, modlog)
 
     def stream(self):
         while True:
