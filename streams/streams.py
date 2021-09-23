@@ -1,3 +1,4 @@
+import os.path
 import sys
 import time
 from datetime import datetime, timedelta
@@ -33,14 +34,14 @@ class ModLogStreams:
                 map(partial(map_values, mapping=mapping, skip_keys=skip_keys), map(lambda item: item.__dict__, chunk))
             )
             to_ingest = self.check_cache_multi(mapped)
-            print('to_ingest', len(to_ingest))
+            log.debug(f"to_ingest: {len(to_ingest)}")
             for to_ingest_chunk in [to_ingest[x : x + 10] for x in range(0, len(to_ingest), 10)]:
                 to_send.append([to_ingest_chunk, admin])
                 for data in to_ingest_chunk:
                     log.info(
                         f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                     )
-            print('to_send', len(to_send))
+            log.debug(f"to_send: {len(to_send)}")
             ingest_action_chunk.chunks(to_send, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
             cache.set_multi({action["id"]: 1 for action in to_ingest})
 
@@ -87,9 +88,12 @@ class ModLogStreams:
 
     @staticmethod
     def check_cache_multi(items):
+        log.debug(f"checking {len(items)}")
         cached_items = try_multiple(
             cache.get_multi, ([item["id"] for item in items],), exception=pylibmc.Error, default_result=[]
         )
+        if len(cached_items) == len(items):
+            return []
         to_ingest = []
         for item in items:
             if item["id"] not in cached_items:
@@ -118,12 +122,11 @@ class ModLogStreams:
         return modlog
 
     def admin_backlog(self):
-        while True:
-            admin = True
-            stream = False
-            modlog = self._get_modlog(admin, stream)
-            # self._stream(admin, modlog, stream)
-            self._chunk(admin, modlog)
+        admin = True
+        stream = False
+        modlog = self._get_modlog(admin, stream)
+        # self._stream(admin, modlog, stream)
+        self._chunk(admin, modlog)
 
     def admin_stream(self):
         while True:
@@ -146,6 +149,18 @@ class ModLogStreams:
             stream = True
             modlog = self._get_modlog(admin, stream)
             self._stream(admin, modlog, stream)
+
+
+def get_last_cache_reset():
+    if not os.path.isfile("last_cache_reset"):
+        return 86400
+    else:
+        with open("last_cache_reset", "r") as f:
+            try:
+                last_reset = float(f.read())
+            except Exception:
+                last_reset = time.time() - 86400
+            return time.time() - last_reset
 
 
 def main():
@@ -223,6 +238,11 @@ def set_cache():
     return [result.id for result in results]
 
 
+def set_last_cache_reset():
+    with open("last_cache_reset", "w") as f:
+        f.write(f"{time.time()}")
+
+
 def set_webhooks():
     subreddit_webhooks = Webhook.query.all()
     to_set = {}
@@ -241,8 +261,10 @@ def set_webhooks():
 if __name__ == "__main__":
     freeze_support()
     try:
-        cache.flush_all()
-        set_cache()
+        if get_last_cache_reset() >= 86400:
+            cache.flush_all()
+            set_cache()
+            set_last_cache_reset()
         set_webhooks()
         main()
         while True:

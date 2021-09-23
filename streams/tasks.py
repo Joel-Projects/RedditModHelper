@@ -120,7 +120,7 @@ def ingest_action_chunk(self, actions, admin):
             except Exception as error:
                 log.exception(error)
                 self.retry()
-        cache.add_multi({data["id"]: data["id"] for data in actions})
+        cache.add_multi({data["id"]: 1 for data in actions})
         for i, modlog_item in enumerate(results):
             new = modlog_item.new
             data = actions[i]
