@@ -5,12 +5,14 @@ from copy import copy
 
 from discord import Embed
 from praw.models import ListingGenerator
+from asyncpraw.models import ListingGenerator as AsyncListingGenerator
 
 
 def convert_or_none(func):
     def wrapper(arg):
         if arg:
             return func(arg)
+        return None
 
     return wrapper
 
@@ -33,30 +35,6 @@ def map_values(action_dict, mapping, skip_keys=None):
             else:
                 data[key] = item_mapping(value)
     return data
-
-
-class MemcacheHelper:
-    def __init__(self, client):
-        self.client = client
-
-    def __getattr__(self, item):
-        try:
-            return self.__getattribute__(item)
-        except AttributeError:
-            return getattr(self.client, item)
-
-    def append(self, key, value):
-        stored = self.client.get(key)
-        result = False
-        if stored:
-            if value not in stored:
-                stored.append(value)
-                self.client.set(key, stored)
-                result = True
-        else:
-            self.client.set(key, [value])
-            result = True
-        return result
 
 
 def gen_action_embed(action):
@@ -135,6 +113,20 @@ class ChunkGenerator(ListingGenerator):
 
         self._list_index += len(self._listing)
         self.yielded += len(self._listing)
+        return self._listing
+
+
+class AsyncChunkGenerator(AsyncListingGenerator):
+    async def __anext__(self):
+        """Permit ListingGenerator to operate as an async generator."""
+        if self.limit is not None and self.yielded >= self.limit:
+            raise StopAsyncIteration()
+
+        if self._listing is None or self._list_index >= len(self._listing):
+            await self._next_batch()
+
+        self._list_index += 1
+        self.yielded += 1
         return self._listing
 
 
