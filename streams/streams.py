@@ -66,7 +66,7 @@ class ModLogStreams:
                 async for action, admin, stream in modlog:
                     try:
                         data = map_values(action.__dict__, mapping, skip_keys)
-                        new = try_multiple(cache.add, (data["id"], 1), exception=pylibmc.Error, default_result=False)
+                        # new = try_multiple(cache.add, (data["id"], 1), exception=pylibmc.Error, default_result=False)
                         # if new:
                         to_send.append(data)
                         log.info(f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
@@ -84,11 +84,9 @@ class ModLogStreams:
                         last_action = time.time()
                     except Exception as error:
                         log.exception(error)
-                if to_send:
-                    ingest_action.chunks(to_send, 10).apply_async(priority=(2 if admin else 1), queue="actions")
-            except asyncprawcore.ServerError as error:
-                log.info(error)
-                log.info((self.subreddits, await self.reddit.user.me()))
+                    except asyncprawcore.ServerError as error:
+                        log.info(error)
+                        log.info((self.subreddits, await self.reddit.user.me()))
             except Exception as error:
                 log.exception(error)
 
