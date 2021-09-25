@@ -67,11 +67,11 @@ class ModLogStreams:
                     try:
                         data = map_values(action.__dict__, mapping, skip_keys)
                         new = try_multiple(cache.add, (data["id"], 1), exception=pylibmc.Error, default_result=False)
-                        if new:
-                            to_send.append(data)
-                            log.info(f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
-                        else:
-                            log.debug(f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                        # if new:
+                        to_send.append(data)
+                        log.info(f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
+                        # else:
+                        #     log.debug(f"Already ingested {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}")
                         if (len(to_send) % 500 == 0 or len(to_send) > 500 or admin or (time.time() - last_action) > 10  # send if last action was more than 5 seconds ago
                         ) and to_send:
                             to_ingest = []
@@ -80,8 +80,8 @@ class ModLogStreams:
                             log.info(f"Sending {len(to_ingest):,} chunks with {len(to_send):,} actions")
                             ingest_action_chunk.chunks(to_ingest, 10).apply_async(priority=(1 if admin else 0), queue="action_chunks")
                             to_send = []
-                        if new:
-                            last_action = time.time()
+                        # if new:
+                        last_action = time.time()
                     except Exception as error:
                         log.exception(error)
                 if to_send:
@@ -139,8 +139,9 @@ async def main():
         subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
         chunks = list(zip_longest(*[reversed(chunk) if i % 2 == 0 else chunk for i, chunk in enumerate([subreddits[x: x + 10] for x in range(0, len(subreddits), 10)])]))
         for chunk, subreddit_chunk in enumerate(chunks, 1):
-            streams.append(start_streaming([sub.display_name for sub in subreddit_chunk if sub], "Lil_SpazJoekp", chunk, other_auth=True, ))
+            streams.append(start_streaming([sub.display_name for sub in subreddit_chunk if sub], "Lil_SpazJoekp", chunk, other_auth=True))
     await asyncio.gather(*streams)
+
 
 async def start_streaming(subreddits, redditor, chunk, other_auth=False):
     try:
