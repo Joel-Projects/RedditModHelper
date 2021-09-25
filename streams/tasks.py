@@ -91,7 +91,7 @@ def ingest_action(self, data, admin, is_stream):
 
 
 @app.task(bind=True, ignore_result=True)
-def ingest_action_chunk(self, actions, admin):
+def ingest_action_chunk(self, actions, admin, is_stream):
     try:
         columns = [
             "id",
@@ -124,7 +124,9 @@ def ingest_action_chunk(self, actions, admin):
         for i, modlog_item in enumerate(results):
             new = modlog_item.new
             data = actions[i]
-            status = "Past new" if new else "Past old"
+            status = "New" if new else "Old"
+            if not is_stream:
+                status = f"Past {status.lower()}"
             getattr(log, "info" if new else "debug")(
                 f"{status}{' | admin' if admin else ''} | {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
             )
