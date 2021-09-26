@@ -4,8 +4,6 @@ import time
 from copy import copy
 
 from discord import Embed
-from praw.models import ListingGenerator
-from asyncpraw.models import ListingGenerator as AsyncListingGenerator
 
 
 def convert_or_none(func):
@@ -100,34 +98,6 @@ def generate_sub_chunks(subreddits, chunk_size=25):
             if sub
         ]
     return modded_subs, modded_subs_final
-
-
-class ChunkGenerator(ListingGenerator):
-    def __next__(self):
-        """Permit ListingGenerator to operate as a generator."""
-        if self.limit is not None and self.yielded >= self.limit:
-            raise StopIteration()
-
-        if self._listing is None or self._list_index >= len(self._listing):
-            self._next_batch()
-
-        self._list_index += len(self._listing)
-        self.yielded += len(self._listing)
-        return self._listing
-
-
-class AsyncChunkGenerator(AsyncListingGenerator):
-    async def __anext__(self):
-        """Permit ListingGenerator to operate as an async generator."""
-        if self.limit is not None and self.yielded >= self.limit:
-            raise StopAsyncIteration()
-
-        if self._listing is None or self._list_index >= len(self._listing):
-            await self._next_batch()
-
-        self._list_index += 1
-        self.yielded += 1
-        return self._listing
 
 
 def try_multiple(func, args=None, kwargs=None, wait_time=3, max_attempts=3, default_result=None, exception=Exception):

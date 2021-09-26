@@ -43,8 +43,15 @@ app.conf.task_default_queue = "default"
 app.conf.task_default_exchange = "default"
 app.conf.task_default_routing_key = "default"
 
-QUERY = "INSERT INTO mirror.modlog(id, created_utc, moderator, subreddit, mod_action, details, description, target_author, target_body, target_type, target_id, target_permalink, target_title, pinged, query_action) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, false, 'insert') ON CONFLICT (id, created_utc) DO UPDATE SET query_action='updated' RETURNING (query_action='insert') as new;"
-CHUNK_QUERY = "INSERT INTO mirror.modlog(id, created_utc, moderator, subreddit, mod_action, details,  description, target_author, target_body, target_type, target_id, target_permalink, target_title, pinged, query_action) VALUES %s ON CONFLICT (id, created_utc) DO UPDATE SET query_action='updated' RETURNING (query_action='insert') as new;"
+QUERY = """INSERT INTO mirror.modlog(id, created_utc, moderator, subreddit, mod_action, details, description, target_author, target_body, target_type, target_id, target_permalink, target_title, pinged, query_action)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, false, 'insert')
+           ON CONFLICT (id, created_utc) DO UPDATE SET query_action='updated'
+           RETURNING (query_action = 'insert') as new;
+           """
+CHUNK_QUERY = """INSERT INTO mirror.modlog(id, created_utc, moderator, subreddit, mod_action, details, description, target_author, target_body, target_type, target_id, target_permalink, target_title, pinged, query_action)
+                 VALUES %s
+                 ON CONFLICT (id, created_utc) DO UPDATE SET query_action='updated' RETURNING (query_action='insert') as new;
+                 """
 
 
 @app.task(bind=True, ignore_result=True)
@@ -162,8 +169,7 @@ def send_admin_alert(action, webhook):
     try:
         webhook = Webhook(webhook)
         embed, get_more = gen_action_embed(action)
-        webhook.send(
-            # f"To see the entire body run this command:\n`.getbody https://reddit.com{action['target_permalink']}`"
+        webhook.send(  # f"To see the entire body run this command:\n`.getbody https://reddit.com{action['target_permalink']}`"
             # if get_more
             # else None,
             None,
