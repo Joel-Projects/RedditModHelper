@@ -12,6 +12,7 @@ import asyncpraw
 import discord
 from BotUtils.CommonUtils import BotServices
 from discord.ext import commands, tasks
+from discord_slash import SlashCommand
 from gitlab import Gitlab
 from gitlab.v4.objects import Project
 
@@ -19,7 +20,6 @@ import config
 from cogs.utils import context as context_cls
 from cogs.utils.command_cog import CommandCog
 from cogs.utils.config import Config
-from cogs.utils.slash import SlashCommand
 
 bot_name = config.bot_name
 description = "Hello! I am a bot written by Lil_SpazJoekp"
@@ -199,14 +199,14 @@ class RedditModHelper(commands.AutoShardedBot):
         """Looks up a member in cache or fetches if not found.
 
         Parameters
-        -----------
+        ----------
         guild: Guild
             The guild to look in.
         member_id: int
             The member ID to search for.
 
         Returns
-        ---------
+        -------
         Optional[Member]
             The member or None if not found.
         """
@@ -232,7 +232,7 @@ class RedditModHelper(commands.AutoShardedBot):
         return members[0]
 
     async def resolve_member_ids(self, guild, member_ids):
-        """Bulk resolves member IDs to member instances, if possible.
+        """Bulk resolve member IDs to member instances, if possible.
 
         Members that can't be resolved are discarded from the list.
 

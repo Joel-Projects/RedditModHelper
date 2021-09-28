@@ -11,7 +11,7 @@ credmgr
 dataframe_image
 dateparser
 discord
-discord-py-slash-command
+discord-py-interactions
 discord.py
 kombu
 lru_dict
@@ -27,7 +27,6 @@ pylibmc
 python-dateutil
 python-gitlab
 pytz
-shared_memory_dict
 SQLAlchemy
 tabulate
 tzlocal

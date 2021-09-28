@@ -7,12 +7,12 @@ import credmgr
 import discord
 import praw
 from discord import Embed
+from discord_slash.cog_ext import cog_slash, cog_subcommand
 from discord_slash.utils.manage_commands import create_option
 
 from .utils import db
 from .utils.command_cog import CommandCog
 from .utils.converters import RedditorConverter, SubredditConverter
-from .utils.slash import cog_slash, cog_subcommand
 from .utils.utils import parse_sql
 
 
@@ -183,9 +183,8 @@ class SubredditManagement(CommandCog):
         subreddit = await SubredditConverter().convert(context, subreddit)
         if subreddit is None:
             return
-        results = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit))
-        if results:
-            result = results[0]
+        result = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit), fetch_one=True)
+        if result:
             authorized_roles = await context.cog.get_bot_config("authorized_roles")
             is_authorized = any([role.id in authorized_roles for role in context.author.roles])
             if result.channel_id == context.channel_id or is_authorized:
@@ -234,9 +233,8 @@ class SubredditManagement(CommandCog):
         subreddit = await SubredditConverter().convert(context, subreddit)
         if subreddit is None:
             return
-        results = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit))
-        if results:
-            result = results[0]
+        result = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit), fetch_one=True)
+        if result:
             embed = await self.generate_subreddit_embed(
                 None, subreddit, result=result, title=f"r/{subreddit}", url=f"https://www.reddit.com/r/{subreddit}"
             )
@@ -260,11 +258,10 @@ class SubredditManagement(CommandCog):
                 mod_avatar = file.read()
         mapping = {"admin_webhook": "Admin Action Alert", "alert_webhook": "Subreddit Alert"}
         webhook_names = ["admin_webhook", "alert_webhook"]
-        results = parse_sql(await self.sql.fetch("SELECT * FROM webhooks WHERE subreddit=$1", subreddit))
+        result = parse_sql(await self.sql.fetch("SELECT * FROM webhooks WHERE subreddit=$1", subreddit), fetch_one=True)
         webhooks = {}
         channel_webhooks = await alert_channel.webhooks()
-        if results:
-            result = results[0]
+        if result:
             for webhook_name in webhook_names:
                 webhook_url = getattr(result, webhook_name)
                 if webhook_url:
