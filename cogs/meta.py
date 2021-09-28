@@ -13,6 +13,7 @@ import dateutil
 import discord
 from discord import Embed
 from discord.ext import commands, menus
+from discord_slash.cog_ext import cog_slash
 from discord_slash.utils.manage_commands import create_choice, create_option
 from gitlab import Gitlab
 
@@ -24,7 +25,6 @@ from .utils import time as utime
 from .utils.command_cog import CommandCog
 from .utils.commands import command, group
 from .utils.paginator import RoboPages
-from .utils.slash import cog_slash
 from .utils.utils import ordinal
 
 

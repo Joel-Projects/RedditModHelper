@@ -159,13 +159,15 @@ class CommandCog(commands.Cog):
     async def get_authorized_user(self, context):
         if self.bot.debug and context.channel.id == 816020436940226611:
             return "Lil_SpazJoekp"
-        results = await self.sql.fetch(
-            "SELECT modlog_account FROM subreddits WHERE channel_id=$1",
-            context.channel.id,
+        result = parse_sql(
+            await self.sql.fetch(
+                "SELECT modlog_account FROM subreddits WHERE channel_id=$1",
+                context.channel.id,
+            ),
+            fetch_one=True,
         )
-        results = parse_sql(results)
-        if results:
-            return results[0][0]
+        if result:
+            return result[0]
         else:
             return None
 
@@ -217,9 +219,9 @@ class CommandCog(commands.Cog):
         return sub
 
     async def get_bot_config(self, key):
-        results = parse_sql(await self.bot.pool.fetch("SELECT * FROM settings WHERE key=$1", key))
-        if len(results) > 0:
-            return json.loads(results[0].value)["value"]
+        result = parse_sql(await self.bot.pool.fetch("SELECT * FROM settings WHERE key=$1", key), fetch_one=True)
+        if result:
+            return json.loads(result.value)["value"]
         else:
             return None
 
@@ -246,10 +248,11 @@ class CommandCog(commands.Cog):
     async def get_sub_from_channel(self, context):
         if self.bot.debug and context.channel.id == 816020436940226611:
             return "pics"
-        results = await self.sql.fetch("SELECT name FROM subreddits WHERE channel_id=$1", context.channel.id)
-        results = parse_sql(results)
-        if results:
-            return results[0][0]
+        result = parse_sql(
+            await self.sql.fetch("SELECT name FROM subreddits WHERE channel_id=$1", context.channel.id), fetch_one=True
+        )
+        if result:
+            return result[0]
         else:
             await self.error_embed(context, "This command can only be used in a sub channel.")
             return

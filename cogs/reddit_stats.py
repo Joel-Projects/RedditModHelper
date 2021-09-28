@@ -1,11 +1,11 @@
 """Commands for getting various Reddit Moderation statistics"""
+import asyncio
 import enum
 import io
 import time
 from asyncio import CancelledError
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import auto
-from functools import cached_property
 from typing import NamedTuple
 
 import asyncpg
@@ -19,15 +19,32 @@ from asyncpraw.exceptions import InvalidURL
 from asyncpraw.models import Subreddit
 from asyncprawcore import NotFound
 from dateutil.relativedelta import relativedelta
-from discord import AllowedMentions
+from discord import AllowedMentions, RequestsWebhookAdapter, Webhook
+from discord.ext import tasks
+from discord_slash.cog_ext import cog_slash, cog_subcommand
 from discord_slash.utils.manage_commands import create_option
 from PIL import Image
 
+from .utils import db
 from .utils.command_cog import CommandCog
 from .utils.commands import command
 from .utils.embeds import Embed
-from .utils.slash import cog_slash, cog_subcommand
 from .utils.utils import ordinal, parse_sql
+
+
+class ModqueueSubscriptions(db.Table, table_name="modqueue_subscriptions"):
+    id = db.PrimaryKeyColumn()
+    subreddit = db.Column(
+        db.ForeignKey("subreddits", "name", sql_type=db.String()),
+        index=True,
+        nullable=False,
+        unique=True,
+    )
+    item_type = db.Column(db.ModqueueType, nullable=False, default="all")
+    threshold = db.Column(db.Integer(), nullable=False, default=100)
+    interval = db.Column(db.Interval("MINUTE"), default="30m")
+    last_triggered = db.Column(db.Datetime(timezone=True))
+    triggered = db.Column(db.Boolean(), default=False)
 
 
 class Kind(enum.Flag):
@@ -36,12 +53,15 @@ class Kind(enum.Flag):
     ALL = SUBMISSIONS & COMMENTS
 
 
-class ModQueueCounter:
-    def __init__(self, context, subreddit: Subreddit, kind=Kind.ALL, update_interval=200):
+class ModqueueCounter:
+    def __init__(self, context, bot, subreddit: Subreddit, kind=Kind.ALL, update_interval=200, show_progress=True):
         self.context = context
         self.subreddit = subreddit
         self.kind = kind
         self.update_interval = update_interval
+        self.show_progress = show_progress
+
+        self.bot = bot
 
         self.submissions = set()
         self.comments = set()
@@ -82,13 +102,15 @@ class ModQueueCounter:
         return self._embed
 
     async def _maybe_update_embed(self):
-        if self.total % self.update_interval == 0:
-            await self.message.edit(embed=self.embed)
+        if self.show_progress:
+            if self.total % self.update_interval == 0:
+                await self.message.edit(embed=self.embed)
 
-    async def start(self):
+    async def count(self):
         try:
             self.status = "Starting"
-            self.message = await self.context.channel.send(embed=self.embed)
+            if self.show_progress:
+                self.message = await self.context.channel.send(embed=self.embed)
 
             if self.kind in Kind.SUBMISSIONS:
                 self.status = "Counting Submissions"
@@ -102,17 +124,94 @@ class ModQueueCounter:
                     await self._maybe_update_embed()
             self.done = True
             self.status = ""
-            await self.context.send(embed=self.embed)
+            if self.show_progress:
+                await self.context.send(embed=self.embed)
         except Exception as error:
-            self.context.bot.log.exception(error)
+            self.bot.log.exception(error)
             self.errored = True
-        await self.message.delete()
+        if self.show_progress:
+            await self.message.delete()
+        return self.submission_count, self.comment_count, self.total
+
+    def reset(self):
+        self.submissions = set()
+        self.comments = set()
+
+
+class Subscription:
+    def __init__(self, result, cog, subreddit):
+        self.subreddit = result.subreddit
+        self.modlog_account = result.modlog_account
+        self.webhook = Webhook.from_url(result.alert_webhook, adapter=RequestsWebhookAdapter())
+        self.item_type = result.item_type
+        self.threshold = result.threshold
+        self.check_interval = result.check_interval
+        self.last_trigger = result.last_trigger
+        self.next_trigger = result.next_trigger
+        self.triggered = result.triggered
+
+        self.bot = cog.bot
+        self.sql = cog.sql
+        self.modqueue_counter = ModqueueCounter(
+            None, self.bot, subreddit, cog.kind_mapping[self.item_type], show_progress=False
+        )
+
+    @property
+    def _next_trigger_in(self):
+        return (self.next_trigger - datetime.now().astimezone()).total_seconds()
+
+    async def start(self):
+        while True:
+            try:
+                await asyncio.sleep(self._next_trigger_in)
+                submission_count, comment_count, total = await self.modqueue_counter.count()
+                if total >= self.threshold:
+                    # if not self.triggered:
+                    self.triggered = True
+                    await self.send_alert(submission_count, comment_count, total)
+                else:
+                    self.triggered = False
+                self.last_trigger = datetime.now().astimezone()
+                self.next_trigger = self.last_trigger + self.check_interval
+                await self.sql.execute(
+                    "UPDATE modqueue_subscriptions SET triggered=$1, last_trigger=$2 WHERE subreddit=$3",
+                    self.triggered,
+                    self.last_trigger,
+                    self.subreddit,
+                )
+            except CancelledError:
+                pass
+            except Exception as error:
+                self.bot.log.exception(error)
+
+    async def send_alert(self, submission_count, comment_count, total):
+        ...
+        # print()
 
 
 class RedditStats(CommandCog):
-    """
-    A collection of Reddit statistic commands
-    """
+    """A collection of Reddit statistic commands"""
+
+    def __init__(self, bot):
+        super().__init__(bot)
+        self.running_counters = {}
+        self.kind_mapping = {"all": Kind.ALL, "posts": Kind.SUBMISSIONS, "comments": Kind.COMMENTS}
+        # self.start_counters.start()
+
+    @tasks.loop(count=1)
+    async def start_counters(self):
+        # if not self.bot.debug:
+        subscriptions = parse_sql(await self.sql.fetch("SELECT * FROM current_modqueue_subscriptions WHERE enabled"))
+        for subscription in subscriptions:
+            await self.counter(Subscription(subscription, self, await self.reddit.subreddit(subscription.subreddit)))
+
+    async def start_counter(self, subscription):
+        await self._cancel_modqueue_counter(subscription)
+        await self.counter(subscription)
+
+    async def counter(self, subscription):
+        task = self.bot.loop.create_task(subscription.start(), name=f"{subscription.subreddit}_modqueue_counter")
+        self.running_counters[subscription.subreddit] = task
 
     @cog_slash(
         options=[
@@ -290,11 +389,112 @@ class RedditStats(CommandCog):
         subreddit = await self.get_subreddit_instance(context, "posts")
         if not subreddit:
             return
-        kind_mapping = {"All": Kind.ALL, "Posts": Kind.SUBMISSIONS, "Comments": Kind.COMMENTS}
-        modqueue_counter = ModQueueCounter(context, subreddit, kind_mapping[only])
-        await modqueue_counter.start()
+        modqueue_counter = ModqueueCounter(context, self.bot, subreddit, self.kind_mapping[only.lower()])
+        await modqueue_counter.count()
         if modqueue_counter.errored:
             await self.error_embed(context, "Failed to count modqueue.")
+
+    # @cog_subcommand(
+    #     base="modqueue",
+    #     options=[
+    #         create_option("only", "What to count. Defaults to all.", str, False, choices=["All", "Posts", "Comments"]),
+    #         create_option("threshold", "The threshold for sending an alert. Defaults to 100, max is 2000.", int, False),
+    #         create_option(
+    #             "interval",
+    #             "How often the modqueue is checked in minutes. Defaults to 30 minutes, minimum is 10 minutes.",
+    #             int,
+    #             False,
+    #         ),
+    #     ],
+    # )
+    # async def set_alert(self, context, only="All", threshold=100, interval=30):
+    #     """Set alerts for modqueue count."""
+    #     await context.defer()
+    #     subreddit = await self.get_subreddit_instance(context, "posts")
+    #     if not subreddit:
+    #         return
+    #     if threshold > 2000:
+    #         await self.error_embed(context, "Please choose a limit ≤ 2000.")
+    #         return
+    #     if interval < 10:
+    #         await self.error_embed(context, "Please choose an interval ≥ 10 minutes.")
+    #         return
+    #     result = parse_sql(
+    #         await self.sql.fetch("SELECT * FROM modqueue_subscriptions WHERE subreddit=$1", subreddit.display_name),
+    #         fetch_one=True,
+    #     )
+    #     if result:
+    #         item_type = only.lower() if only in ["Posts", "Comments"] else "items"
+    #         confirm = await context.prompt(
+    #             f"{subreddit} is already set to alert when more than {result.threshold:,} {item_type} are in the modqueue.\nDo you want to update?"
+    #         )
+    #         if confirm:
+    #             await self.sql.execute(
+    #                 "UPDATE modqueue_subscriptions SET item_type=$1, threshold=$2, check_interval=$3 WHERE subreddit=$4",
+    #                 only.lower(),
+    #                 threshold,
+    #                 timedelta(minutes=interval),
+    #                 subreddit.display_name,
+    #             )
+    #         else:
+    #             return
+    #     else:
+    #         await self.sql.execute(
+    #             "INSERT INTO modqueue_subscriptions (subreddit, item_type, threshold, check_interval) VALUES ($1, $2, $3, $4)",
+    #             subreddit.display_name,
+    #             only.lower(),
+    #             threshold,
+    #             timedelta(minutes=interval),
+    #         )
+    #     embed = Embed(title="Modqueue alerts successfully set", color=discord.Color.green())
+    #     embed.add_field(name="Threshold", value=f"{threshold:,}")
+    #     embed.add_field(name="Interval", value=f"{interval} minutes")
+    #     await context.send(embed=embed)
+    #     subscription = await self._get_modqueue_subscription(subreddit)
+    #     if subscription:
+    #         await self.start_counter(subscription)
+    #     else:
+    #         self.log.error("Uhhhhh this shouldn't be possible...")
+    #
+    # @cog_subcommand(
+    #     base="modqueue",
+    #     options=[
+    #         create_option(
+    #             "state", "Enable or disable modqueue count alerts.", str, True, choices=["Enable", "Disable"]
+    #         ),
+    #     ],
+    # )
+    # async def toggle(self, context, state="enable"):
+    #     """Enable or disable modqueue count alerts."""
+    #     await context.defer()
+    #     subreddit = await self.get_subreddit_instance(context, "posts")
+    #     if not subreddit:
+    #         return
+    #     subscription = await self._get_modqueue_subscription(subreddit)
+    #     if not subscription:
+    #         await self.error_embed(
+    #             context,
+    #             "Modqueue alerts have not been setup for this subreddit. Use the `/modqueue set_alert` slash command to setup modqueue alerts.",
+    #         )
+    #     enabled = state == "enable"
+    #     try:
+    #         await self.sql.execute(
+    #             "UPDATE modqueue_subscriptions SET enabled=$1 WHERE subreddit=$2", enabled, subreddit.display_name
+    #         )
+    #         await self.success_embed(context, f"Successfully {state.lower()}d modqueue alerts!")
+    #         if subscription:
+    #             if enabled:
+    #                 await self.start_counter(subscription)
+    #             else:
+    #                 await self._cancel_modqueue_counter(subscription)
+    #         else:
+    #             self.log.error("Uhhhhh this shouldn't be possible...")
+    #     except Exception as error:
+    #         self.log.exception(error)
+    #         await self.error_embed(context, f"Failed to {state.lower()} modqueue alerts.")
+    #
+    # # set modqueue voice channel
+    # # create voice channel named f'{subreddit}-modqueue: '
 
     @command(name="modstats", hidden=True, aliases=["ms"])
     async def _modstats(self, context, *args):
@@ -348,13 +548,14 @@ class RedditStats(CommandCog):
             [f"{sub_rank}. {subreddit[0]}: {subreddit[1]:,}" for sub_rank, subreddit in enumerate(subreddits[:20], 1)]
         )
         embed.add_field(name="Top 20 Subreddits", value=value_string, inline=False)
-        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", user))
-        if results:
-            redditor = results[0]
-            user = redditor.redditor
-            formatted_time = datetime.astimezone(redditor.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
-            previous_subscriber_count = redditor.subscribers
-            previous_sub_count = redditor.subreddits
+        result = parse_sql(
+            await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", user), fetch_one=True
+        )
+        if result:
+            user = result.redditor
+            formatted_time = datetime.astimezone(result.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
+            previous_subscriber_count = result.subscribers
+            previous_sub_count = result.subreddits
             embed.set_footer(
                 text=f"{sub_count - previous_sub_count:+,} Subreddits and {subscribers - previous_subscriber_count:+,} Subscribers since I last checked on {formatted_time}"
             )
@@ -373,6 +574,12 @@ class RedditStats(CommandCog):
                 *data,
             )
         await context.send(embed=embed)
+
+    async def _cancel_modqueue_counter(self, subscription):
+        existing_task = self.running_counters.get(subscription.subreddit)
+        if existing_task:
+            existing_task.cancel()
+            del self.running_counters[subscription.subreddit]
 
     def _check_date(self, date, *, last_month=False, current_month=False, today=False):
         parsed_date = None
@@ -502,12 +709,13 @@ class RedditStats(CommandCog):
                         data,
                     )
                     self.log.debug(query)
-                    results = await sql.fetch(
-                        "SELECT moderator, mod_action, target_type FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;",
-                        *data,
-                        timeout=10000,
+                    results = parse_sql(
+                        await sql.fetch(
+                            "SELECT moderator, mod_action, target_type FROM mirror.modlog WHERE subreddit=$1 and created_utc > $2 and created_utc < $3;",
+                            *data,
+                            timeout=10000,
+                        )
                     )
-                    results = parse_sql(results)
                 action_types = set()
                 action_types = self._simplify_mod_actions(action_types, results)
                 mods = {result.moderator: {action: 0 for action in action_types} for result in results}
@@ -675,6 +883,18 @@ class RedditStats(CommandCog):
                 await context.send(embed=embed)
         except Exception as error:
             self.log.exception(error)
+
+    async def _get_modqueue_subscription(self, subreddit):
+        subscriptions = parse_sql(
+            await self.sql.fetch(
+                "SELECT * FROM current_modqueue_subscriptions WHERE subreddit=$1", subreddit.display_name
+            )
+        )
+        if subscriptions:
+            subscription = subscriptions[0]
+        else:
+            subscription = None
+        return subscription
 
     @staticmethod
     def parse_date(date=None):

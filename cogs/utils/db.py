@@ -144,6 +144,13 @@ class Status(SQLType):
         return "STATUS"
 
 
+class ModqueueType(SQLType):
+    python = str
+
+    def to_sql(self):
+        return "MODQUEUE_TYPE"
+
+
 class Integer(SQLType):
     python = int
 

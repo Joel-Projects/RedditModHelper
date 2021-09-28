@@ -33,8 +33,8 @@ def ordinal(num):
     return str(num) + suffix
 
 
-def parse_sql(results):
-    if len(results) > 0:
+def parse_sql(results, fetch_one=False):
+    if results:
         Result = NamedTuple(
             "Result",
             [
@@ -46,9 +46,7 @@ def parse_sql(results):
             ],
         )
         results = [Result(*result) for result in results]
-        return results
-    else:
-        return None
+    return results[0] if fetch_one and results else results
 
 
 def resolve_sub(argument_name):
