@@ -5,9 +5,9 @@ from typing import Optional
 import discord
 from discord.ext.commands import Cog, Context
 from discord_slash import ComponentContext
-from discord_slash.cog_ext import cog_component, cog_slash
-from discord_slash.model import ButtonStyle
-from discord_slash.utils.manage_commands import create_option
+from discord_slash.cog_ext import cog_component, cog_slash, cog_subcommand, permission
+from discord_slash.model import ButtonStyle, SlashCommandPermissionType
+from discord_slash.utils.manage_commands import create_option, create_permission
 from discord_slash.utils.manage_components import create_actionrow, create_button
 
 from .utils import checks, db
@@ -196,7 +196,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         self, member, actor, approval_message=None, grandfathered=False, preemptive=False, send_embed=True
     ):
         try:
-            roles_to_add = []
+            roles_to_add = [self.approved_role]
             if member:
                 redditor = await self.get_redditor(None, member)
             if isinstance(member, discord.Member):
@@ -215,8 +215,9 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                         for result in results
                         if result.name in moderated_subreddits and self.bot.snoo_guild.get_role(result.role_id)
                     ]
-                    await member.add_roles(self.approved_role, *roles_to_add)
-                    await member.remove_roles(self.unverified_role, self.unapproved_role, self.grandfather_role)
+                await member.add_roles(*roles_to_add)
+                await member.remove_roles(self.unverified_role, self.unapproved_role, self.grandfather_role)
+
             member = member.id if isinstance(member, discord.Member) else member
             preemptive_note = ""
             if preemptive:
@@ -722,40 +723,49 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 self.log.info(f"{user} already approved")
 
     # todo: convert this to slash command
-    @command()
+    @cog_subcommand(
+        base="blacklist",
+        base_permissions={
+            785198941535731715: [
+                create_permission(785203089001938974, SlashCommandPermissionType.ROLE, True),
+                create_permission(786230454286024775, SlashCommandPermissionType.ROLE, True),
+                create_permission(393801572858986496, SlashCommandPermissionType.USER, True),
+            ]
+        },
+        base_default_permission=False,
+        options=[create_option("redditor", "Redditor to blacklist.", str, True)],
+    )
+    async def add(self, context, redditor):
+        """Preemptively deny a user from accessing this server."""
+        user = await self.get_mod(context, redditor)
+        await self.pre_action_user(context, user, "denied")
+
+    @cog_subcommand(
+        base="blacklist",
+        base_permissions={
+            785198941535731715: [
+                create_permission(785203089001938974, SlashCommandPermissionType.ROLE, True),
+                create_permission(786230454286024775, SlashCommandPermissionType.ROLE, True),
+                create_permission(393801572858986496, SlashCommandPermissionType.USER, True),
+            ]
+        },
+        base_default_permission=False,
+        options=[create_option("redditor", "Redditor to blacklist.", str, True)],
+    )
+    async def remove(self, context, redditor):
+        """Preemptively deny a user from accessing this server."""
+        user = await self.get_mod(context, redditor)
+        await self.pre_action_user(context, user, "denied")
+
+    @command(name="deny")
     @checks.authorized_roles()
-    async def blacklist(self, context, *usernames: RedditorConverter):
-        """Preemptively deny a user from accessing this server.
+    async def _deny(self, context):
+        await context.send("This command has been converted to a slash command: `/deny`", delete_after=10)
 
-        Params:
-
-        usernames: One or more redditors to blacklist. This is the redditor's username, case-insensitive.
-
-        Examples:
-
-        `.blacklist spez` blacklist user spez.
-        `.blacklist spez N8theGr8` same as previous but also blacklists N8theGr8.
-        """
-        for user in usernames:
-            await self.pre_action_user(context, user, "denied")
-
-    # @command()
-    # @checks.authorized_roles()
-    # async def deny(self, context, *user_ids: UserIDConverter):
-    #     """Deny a user to access this server.
-    #
-    #     Params:
-    #
-    #     user_ids: One or more users to deny. This can be the number in the approval embed or a discord user id or a user mention.
-    #
-    #     Examples:
-    #
-    #     `.deny 1` denies user 1. This is the number provided in the approval embed.
-    #     `.deny 1 2` same as previous but also denies user 2.
-    #     `.deny 393801572858986496` denies user with discord user id 393801572858986496.
-    #     `.deny @N8theGr8` this denies N8theGr8.
-    #     """
-    #     await self.action_users(context, user_ids, "deny")
+    @command(name="approve")
+    @checks.authorized_roles()
+    async def _approve(self, context):
+        await context.send("This command has been converted to a slash command: `/approve`", delete_after=10)
 
     @command()
     async def done(self, context: Context, userid: Optional[int]):
@@ -930,7 +940,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             await self.error_embed(context, f"The following users are not whitelisted:\n\n{removed}")
 
     @command(name="verify")
-    async def _verify(self, context, *args):
+    async def _verify(self, context):
         await context.send("This command has been converted to a slash command: `/verify`")
 
     @cog_slash(

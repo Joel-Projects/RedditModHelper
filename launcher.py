@@ -40,6 +40,7 @@ class RemoveNoise(logging.Filter):
 def setup_logging():
     try:
         logging.getLogger("discord").setLevel(logging.INFO)
+        logging.getLogger("discord_slash").setLevel(logging.INFO)
         logging.getLogger("discord.http").setLevel(logging.WARNING)
         logging.getLogger("discord.state").addFilter(RemoveNoise())
 

@@ -88,7 +88,10 @@ class RedditModHelper(commands.AutoShardedBot):
         self.identifies = defaultdict(list)
         self.prefixes = Config("prefixes.json")
         self.blacklist = Config("blacklist.json")
-        self.slash = SlashCommand(self, sync_commands=True)
+        if self.debug:
+            self.slash = SlashCommand(self, sync_commands=True, debug_guild=785198941535731715)
+        else:
+            self.slash = SlashCommand(self, sync_commands=True)
         for extension in initial_extensions:
             try:
                 self.load_extension(extension)
@@ -135,6 +138,9 @@ class RedditModHelper(commands.AutoShardedBot):
             await context.send(error)
         else:
             self.log_error(context, error)
+
+    async def on_slash_command_error(self, context, error):
+        self.log_error(context, error)
 
     def log_error(self, context, error):
         try:

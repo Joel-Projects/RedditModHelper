@@ -206,7 +206,7 @@ class Admin(CommandCog, command_attrs=dict(hidden=True)):
         modules = self.find_modules_from_git(stdout)
         mods_text = "\n".join(f"{index}. `{module}`" for index, (_, module) in enumerate(modules, start=1))
         prompt_text = f"This will update the following modules, are you sure?\n{mods_text}"
-        confirm = await context.prompt(prompt_text, reacquire=False)
+        confirm = await context.prompt(prompt_text)
         if not confirm:
             return await context.send("Aborting.")
 

@@ -115,7 +115,6 @@ class SubredditManagement(CommandCog):
                 confirm = await context.prompt(
                     f"My authorization for u/{mod_account} is not valid. I will need you to reauthorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
                     timeout=None,
-                    channel=context.channel,
                 )
                 if not confirm:
                     await context.send("Cancelled")
@@ -123,8 +122,8 @@ class SubredditManagement(CommandCog):
             auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(required_scopes, True)
             confirm = await context.prompt(
                 f"u/{mod_account} has not granted me permission yet, I will need you to authorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
-                timeout=None,
                 channel=context.channel,
+                timeout=None,
             )
             if not confirm:
                 await context.send("Cancelled")
@@ -188,9 +187,7 @@ class SubredditManagement(CommandCog):
             authorized_roles = await context.cog.get_bot_config("authorized_roles")
             is_authorized = any([role.id in authorized_roles for role in context.author.roles])
             if result.channel_id == context.channel_id or is_authorized:
-                confirm = await context.prompt(
-                    f"Are you *sure* you want to delete r/{subreddit} from this bot?",
-                )
+                confirm = await context.prompt(f"Are you *sure* you want to delete r/{subreddit} from this bot?")
                 if not confirm:
                     return
                 try:
@@ -226,7 +223,7 @@ class SubredditManagement(CommandCog):
         else:
             await self.error_embed(context, f"r/{subreddit} has not been added to this bot.")
 
-    @cog_subcommand(base="manage_sub", options=[create_option("subreddit", "Subreddit to update.", str, True)])
+    @cog_subcommand(base="manage_sub", options=[create_option("subreddit", "Subreddit to view.", str, True)])
     async def view(self, context, subreddit):
         """View a subreddit."""
         await context.defer()

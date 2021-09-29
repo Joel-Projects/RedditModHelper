@@ -335,15 +335,15 @@ class Settings(CommandCog):
                         )
                     confirm, message = await context.prompt(
                         "Are you sure you want to delete the following settings?",
-                        embed=embed,
                         delete_after=False,
+                        embed=embed,
                         return_message=True,
                     )
                     if confirm:
                         confirm, message = await context.prompt(
                             "Are you REALLY sure you want to delete the following settings?",
-                            embed=embed,
                             delete_after=False,
+                            embed=embed,
                             return_message=True,
                         )
                         if confirm:
@@ -373,8 +373,8 @@ class Settings(CommandCog):
             if not error:
                 confirm, message = await context.prompt(
                     "Are you sure you want to delete the following settings?",
-                    embed=embed,
                     delete_after=False,
+                    embed=embed,
                     return_message=True,
                 )
                 canceled = not confirm
