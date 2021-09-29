@@ -98,7 +98,12 @@ def ingest_action(self, data, admin, is_stream):
 
 
 @app.task(bind=True, ignore_result=True)
-def ingest_action_chunk(self, actions, admin, is_stream):
+def ingest_action_chunk_test(self, actions):
+    log.info(len(actions))
+
+@app.task(bind=True, ignore_result=True)
+def ingest_action_chunk(self, actions):
+    log.info(len(actions))
     try:
         columns = [
             "id",
@@ -121,14 +126,14 @@ def ingest_action_chunk(self, actions, admin, is_stream):
                 results = execute_values(
                     sql,
                     CHUNK_QUERY,
-                    [tuple([data.get(key, None) for key in columns] + [False, "insert"]) for data in actions],
+                    [tuple([data.get(key, None) for key in columns] + [False, "insert"]) for data, _, _ in actions],
                     fetch=True,
                 )
             except Exception as error:
                 log.exception(error)
                 self.retry()
         cache.add_multi({data["id"]: 1 for data in actions})
-        for i, modlog_item in enumerate(results):
+        for i, modlog_item, admin, is_stream in enumerate(results):
             new = modlog_item.new
             data = actions[i]
             status = "New" if new else "Old"

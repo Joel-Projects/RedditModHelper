@@ -44,12 +44,10 @@ class ModLogStreams:
             try:
                 to_send = []
                 last_action = time.time()
-                modlogs = []
-                for admin in [True, False]:
-                    for stream in [True, False]:
-                        modlogs.append(self._log_wrapper("+".join(self.subreddits), admin, stream))
+                modlogs = [self._log_wrapper("+".join(self.subreddits), admin, stream) for admin in [True, False] for stream in [True, False]]
                 combine = aiostream.stream.merge(*modlogs)
                 async with combine.stream() as modlog:
+                    has_admin = False
                     async for action, admin, stream in modlog:
                         try:
                             data = map_values(action.__dict__, mapping, skip_keys)
@@ -57,7 +55,8 @@ class ModLogStreams:
                                 cache.add, (data["id"], 1), exception=pylibmc.Error, default_result=False
                             )
                             if new:
-                                to_send.append(data)
+                                to_send.append([data, admin, stream])
+                                has_admin = admin
                                 log.info(
                                     f"Ingesting {data['subreddit']} | {data['moderator']} | {data['mod_action']} | {data['created_utc'].astimezone().strftime('%m-%d-%Y %I:%M:%S %p')}"
                                 )
@@ -67,17 +66,16 @@ class ModLogStreams:
                                 )
                             if (
                                 len(to_send) >= 500
-                                or admin
-                                or (time.time() - last_action) > 10  # send if last action was more than 10 seconds ago
+                                or has_admin
+                                or (time.time() - last_action) > 10  # send if last new action was more than 10 seconds ago
                             ) and to_send:
-                                to_ingest = []
-                                for to_ingest_chunk in [to_send[x : x + 10] for x in range(0, len(to_send), 10)]:
-                                    to_ingest.append([to_ingest_chunk, admin, stream])
+                                to_ingest = [chunk for chunk in [to_send[x : x + 10] for x in range(0, len(to_send), 10)]]
                                 log.info(f"Sending {len(to_ingest):,} chunks with {len(to_send):,} actions")
                                 ingest_action_chunk.chunks(to_ingest, 10).apply_async(
-                                    priority=(1 if admin else 0), queue="action_chunks"
+                                    priority=1, queue="action_chunks"
                                 )
                                 to_send = []
+                                has_admin = False
                             if new:
                                 last_action = time.time()
                         except Exception as error:
