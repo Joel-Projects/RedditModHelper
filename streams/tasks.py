@@ -98,12 +98,7 @@ def ingest_action(self, data, admin, is_stream):
 
 
 @app.task(bind=True, ignore_result=True)
-def ingest_action_chunk_test(self, actions):
-    log.info(len(actions))
-
-@app.task(bind=True, ignore_result=True)
 def ingest_action_chunk(self, actions):
-    log.info(len(actions))
     try:
         columns = [
             "id",
@@ -132,10 +127,10 @@ def ingest_action_chunk(self, actions):
             except Exception as error:
                 log.exception(error)
                 self.retry()
-        cache.add_multi({data["id"]: 1 for data in actions})
-        for i, modlog_item, admin, is_stream in enumerate(results):
+        cache.add_multi({data["id"]: 1 for data, _, _ in actions})
+        for i, modlog_item in enumerate(results):
             new = modlog_item.new
-            data = actions[i]
+            data, admin, is_stream = actions[i]
             status = "New" if new else "Old"
             if not is_stream:
                 status = f"Past {status.lower()}"
