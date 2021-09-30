@@ -1,16 +1,16 @@
 import asyncio
 
 from discord import Embed
+
+from discord_slash import SlashContext
 from discord_slash.cog_ext import cog_slash
 from discord_slash.utils.manage_commands import create_option
 
 from .utils.command_cog import CommandCog
-from .utils.integration_context import SlashContext
 
 
 class Misc(CommandCog):
     """A collection of Miscellaneous commands."""
-
     #
     # @cog_slash(
     #     options=[

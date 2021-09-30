@@ -10,7 +10,7 @@ import aiohttp
 import asyncpg
 import asyncpraw
 import discord
-from BotUtils.CommonUtils import BotServices
+from BotUtils import BotServices
 from discord.ext import commands, tasks
 from discord_slash import SlashCommand
 from gitlab import Gitlab
@@ -25,7 +25,7 @@ bot_name = config.bot_name
 description = "Hello! I am a bot written by Lil_SpazJoekp"
 
 services = BotServices(bot_name)
-log = services.logger()
+log = services.logger(enable_loggers=['discord_slash'])
 
 initial_extensions = (
     "cogs.admin",
@@ -88,10 +88,7 @@ class RedditModHelper(commands.AutoShardedBot):
         self.identifies = defaultdict(list)
         self.prefixes = Config("prefixes.json")
         self.blacklist = Config("blacklist.json")
-        if self.debug:
-            self.slash = SlashCommand(self, sync_commands=True, debug_guild=785198941535731715)
-        else:
-            self.slash = SlashCommand(self, sync_commands=True)
+        self.slash = SlashCommand(self, sync_commands=True, debug_guild=785198941535731715)
         for extension in initial_extensions:
             try:
                 self.load_extension(extension)
@@ -99,7 +96,8 @@ class RedditModHelper(commands.AutoShardedBot):
                 log.error(f"Failed to load extension {extension}. Error: {error}")
                 traceback.print_exc()
 
-    def get_reddit(self, username):
+    @staticmethod
+    def get_reddit(username):
         return asyncpraw.Reddit(**services.reddit(username).config._settings)
 
     def _clear_gateway_data(self):

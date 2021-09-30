@@ -21,8 +21,6 @@ if sys.platform != "darwin":
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 pool = None
-
-
 postgres = services._getDbConnectionSettings()
 
 
@@ -39,14 +37,11 @@ class RemoveNoise(logging.Filter):
 @contextlib.contextmanager
 def setup_logging():
     try:
-        logging.getLogger("discord").setLevel(logging.INFO)
-        logging.getLogger("discord_slash").setLevel(logging.INFO)
-        logging.getLogger("discord.http").setLevel(logging.WARNING)
-        logging.getLogger("discord.state").addFilter(RemoveNoise())
-
-        log.setLevel(logging.INFO)
-        if sys.platform == "darwin":
-            logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger('discord').disabled = True
+        logging.getLogger('discord.http').disabled = True
+        logging.getLogger('discord.gateway').disabled = True
+        logging.getLogger('discord.state').disabled = True
+        logging.getLogger("discord_slash").setLevel(logging.DEBUG)
         log.info(f"Starting {config.bot_name} | Version: {config.__version__}")
         yield
     finally:

@@ -24,23 +24,6 @@ from .utils.context import Context
 
 log = logging.getLogger(__name__)
 
-LOGGING_CHANNEL = 817835810593439784
-
-
-class GatewayHandler(logging.Handler):
-    def __init__(self, cog):
-        self.cog = cog
-        super().__init__(logging.INFO)
-
-    def filter(self, record):
-        if isinstance(record.msg, str):
-            return record.name == "discord.gateway" or "Shard ID" in record.msg or "Websocket closed " in record.msg
-        else:
-            return False
-
-    def emit(self, record):
-        self.cog.add_record(record)
-
 
 class Commands(db.Table):
     id = db.PrimaryKeyColumn()
@@ -82,8 +65,6 @@ class Stats(CommandCog):
         self._data_batch = []
         self.bulk_insert_loop.add_exception_type(asyncpg.PostgresConnectionError)
         self.bulk_insert_loop.start()
-        self._gateway_queue = asyncio.Queue(loop=bot.loop)
-        self.gateway_worker.start()
 
     async def bulk_insert(self):
         query = """INSERT INTO commands (guild_id, channel_id, author_id, used, prefix, command, failed)
@@ -101,17 +82,11 @@ class Stats(CommandCog):
 
     def cog_unload(self):
         self.bulk_insert_loop.stop()
-        self.gateway_worker.cancel()
 
     @tasks.loop(seconds=10.0)
     async def bulk_insert_loop(self):
         async with self._batch_lock:
             await self.bulk_insert()
-
-    @tasks.loop(seconds=0.0)
-    async def gateway_worker(self):
-        record = await self._gateway_queue.get()
-        await self.notify_gateway_status(record)
 
     async def register_command(self, context):
         if context.command is None:
@@ -1102,12 +1077,8 @@ def setup(bot):
 
     cog = Stats(bot)
     bot.add_cog(cog)
-    bot._stats_cog_gateway_handler = handler = GatewayHandler(cog)
-    logging.getLogger().addHandler(handler)
     commands.AutoShardedBot.on_error = on_error
 
 
 def teardown(bot):
     commands.AutoShardedBot.on_error = old_on_error
-    logging.getLogger().removeHandler(bot._stats_cog_gateway_handler)
-    del bot._stats_cog_gateway_handler

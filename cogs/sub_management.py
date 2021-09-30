@@ -240,7 +240,7 @@ class SubredditManagement(CommandCog):
             await self.error_embed(context, f"r/{subreddit} has not been added to this bot.")
 
     async def create_or_update_alert_channel(self, context, subreddit, alert_channel):
-        with open("redditadmin.png", "rb") as file:
+        with open("admin.png", "rb") as file:
             admin_avatar = file.read()
         sub = await self.reddit.subreddit(subreddit, fetch=True)
         if sub.icon_img:
@@ -248,10 +248,10 @@ class SubredditManagement(CommandCog):
                 response = await self.bot.session.get(sub.icon_img)
                 mod_avatar = await response.read()
             except Exception:
-                with open("redditmod.png", "rb") as file:
+                with open("mod.png", "rb") as file:
                     mod_avatar = file.read()
         else:
-            with open("redditmod.png", "rb") as file:
+            with open("mod.png", "rb") as file:
                 mod_avatar = file.read()
         mapping = {"admin_webhook": "Admin Action Alert", "alert_webhook": "Subreddit Alert"}
         webhook_names = ["admin_webhook", "alert_webhook"]
