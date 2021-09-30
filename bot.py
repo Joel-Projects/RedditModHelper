@@ -25,7 +25,7 @@ bot_name = config.bot_name
 description = "Hello! I am a bot written by Lil_SpazJoekp"
 
 services = BotServices(bot_name)
-log = services.logger(enable_loggers=['discord_slash'])
+log = services.logger()
 
 initial_extensions = (
     "cogs.admin",
