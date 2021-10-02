@@ -135,20 +135,15 @@ class CommandCog(commands.Cog):
         moderated = None
         try:
             with self.bot.tempReddit(user) as reddit:
-                moderated = await reddit.get(f"user/{user}/moderated_subreddits")
-                if "data" not in moderated:
-                    moderated = []
-                else:
-                    moderated = moderated["data"]
-        except Exception:
+                redditor = await reddit.user.me()
+                moderated = await redditor.moderated()
+        except Exception as error:
+            self.log.error(error)
             pass
         if not moderated:
-            moderated = await self.bot.reddit.get(f"user/{user}/moderated_subreddits")
-            if "data" not in moderated:
-                moderated = []
-            else:
-                moderated = moderated["data"]
-        subreddits = [(i["display_name"], i["subscribers"]) for i in moderated]
+            redditor = await reddit.redditor(user)
+            moderated = await redditor.moderated()
+        subreddits = [(i.display_name, i.subscribers) for i in moderated]
         subscribers = sum([subreddit[1] for subreddit in subreddits])
         sub_count = len(subreddits)
         zero_count = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 0])

@@ -544,8 +544,15 @@ class RedditStats(CommandCog):
             zero_count,
         ) = await self.get_and_calculate_subs(user)
         embed = self._gen_embed(user, sub_count, subscribers, sub_average, remaining, zero_count)
-        value_string = "\n".join(
-            [f"{sub_rank}. {subreddit[0]}: {subreddit[1]:,}" for sub_rank, subreddit in enumerate(subreddits[:20], 1)]
+        value_string = (
+            "\n".join(
+                [
+                    f"{sub_rank}. {subreddit[0]}: {subreddit[1]:,}"
+                    for sub_rank, subreddit in enumerate(subreddits[:20], 1)
+                ]
+            )
+            if subreddits
+            else "This user does not moderate any subreddits."
         )
         embed.add_field(name="Top 20 Subreddits", value=value_string, inline=False)
         result = parse_sql(

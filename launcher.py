@@ -37,10 +37,10 @@ class RemoveNoise(logging.Filter):
 @contextlib.contextmanager
 def setup_logging():
     try:
-        logging.getLogger('discord').disabled = True
-        logging.getLogger('discord.http').disabled = True
-        logging.getLogger('discord.gateway').disabled = True
-        logging.getLogger('discord.state').disabled = True
+        logging.getLogger("discord").setLevel(logging.ERROR)
+        logging.getLogger("discord.http").setLevel(logging.ERROR)
+        logging.getLogger("discord.gateway").setLevel(logging.ERROR)
+        logging.getLogger("discord.state").setLevel(logging.ERROR)
         logging.getLogger("discord_slash").setLevel(logging.DEBUG)
         log.info(f"Starting {config.bot_name} | Version: {config.__version__}")
         yield
