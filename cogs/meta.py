@@ -394,6 +394,13 @@ class Meta(CommandCog):
         embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
         await context.send(embed=embed)
 
+    @command(aliases=["dm"])
+    @commands.is_owner()
+    async def debug_mode(self, context):
+        if not self.bot.debug:
+            self.bot.slash.debug_mode = not self.bot.slash.debug_mode
+            await self.success_embed(context, f"{'Enabled' if self.bot.slash.debug_mode else 'Disabled'} debug mode.")
+
     @command(aliases=["c"])
     async def cancel(self, context, *commands):
         tasks = copy.copy(self.bot.running_tasks)

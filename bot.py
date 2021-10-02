@@ -12,7 +12,6 @@ import asyncpraw
 import discord
 from BotUtils import BotServices
 from discord.ext import commands, tasks
-from discord_slash import SlashCommand
 from gitlab import Gitlab
 from gitlab.v4.objects import Project
 
@@ -20,6 +19,7 @@ import config
 from cogs.utils import context as context_cls
 from cogs.utils.command_cog import CommandCog
 from cogs.utils.config import Config
+from cogs.utils.slash import SlashCommand
 
 bot_name = config.bot_name
 description = "Hello! I am a bot written by Lil_SpazJoekp"
