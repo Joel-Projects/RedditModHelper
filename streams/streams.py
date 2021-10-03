@@ -150,7 +150,7 @@ async def start_streaming(subreddits, redditor, chunk, other_auth=False):
     try:
         log.info(f"Building chunk {chunk} for r/{'+'.join(subreddits)} using u/{redditor}...")
         if other_auth:
-            reddit = services.reddit(redditor, botName=f"SiouxBot_Log_Thread_{chunk}")
+            reddit = services.reddit(redditor, bot_name=f"SiouxBot_Log_Thread_{chunk}")
         else:
             reddit = services.reddit(redditor)
         reddit_params = reddit.config._settings
