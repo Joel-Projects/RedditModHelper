@@ -9,8 +9,9 @@ import traceback
 import click
 
 import config
-from bot import RedditModHelper, initial_extensions, log, services
 from cogs.utils.db import Table
+from RedditModHelper import __version__
+from RedditModHelper.bot import RedditModHelper, initial_extensions, log, services
 
 if sys.platform != "darwin":
     try:
@@ -42,7 +43,7 @@ def setup_logging():
         logging.getLogger("discord.gateway").setLevel(logging.ERROR)
         logging.getLogger("discord.state").setLevel(logging.ERROR)
         logging.getLogger("discord_slash").setLevel(logging.DEBUG)
-        log.info(f"Starting {config.bot_name} | Version: {config.__version__}")
+        log.info(f"Starting {config.bot_name} | Version: {__version__}")
         yield
     finally:
         handlers = log.handlers[:]

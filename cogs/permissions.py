@@ -5,13 +5,8 @@ from typing import Optional
 import discord
 from discord.ext.commands import Cog, Context
 from discord_slash import ComponentContext
-from discord_slash.cog_ext import (
-    cog_component,
-    cog_context_menu,
-    cog_slash,
-    cog_subcommand,
-    permission,
-)
+from discord_slash.cog_ext import cog_component, cog_context_menu, cog_slash, cog_subcommand, permission
+from discord_slash.context import InteractionContext
 from discord_slash.model import ButtonStyle
 from discord_slash.utils.manage_commands import create_option, generate_permissions, remove_all_commands
 from discord_slash.utils.manage_components import create_actionrow, create_button
@@ -20,8 +15,7 @@ from .utils import checks, db
 from .utils import time as utime
 from .utils.command_cog import CommandCog
 from .utils.commands import command
-from .utils.converters import NotFound, RedditorConverter
-from .utils.utils import parse_sql, generate_result_embed, EmbedType
+from .utils.utils import EmbedType, generate_result_embed, parse_sql
 
 TIME_FORMAT = "%B %d, %Y at %I:%M:%S %p %Z"
 
@@ -35,6 +29,8 @@ class Users(db.Table, table_name="users"):
     status = db.Column(db.Status, default="'unverified'")
     link_message_id = db.Column(db.Integer(big=True))
     welcome_message_id = db.Column(db.Integer(big=True))
+    join_count = db.Column(db.Integer(), default=0)
+    first_joined_at = db.Column(db.Datetime(timezone=True))
 
 
 class ApprovalLog(db.Table, table_name="approval_log"):
@@ -52,6 +48,16 @@ class ApprovalLog(db.Table, table_name="approval_log"):
 
 
 class ApprovalMessages(db.Table, table_name="approval_messages"):
+    id = db.PrimaryKeyColumn()
+    user_id = db.Column(
+        db.ForeignKey("users", "user_id", sql_type=db.Integer(big=True)),
+        index=True,
+        nullable=False,
+    )
+    message_id = db.Column(db.Integer(big=True), index=True, nullable=False, unique=True)
+
+
+class VerificationMessages(db.Table, table_name="verification_messages"):
     id = db.PrimaryKeyColumn()
     user_id = db.Column(
         db.ForeignKey("users", "user_id", sql_type=db.Integer(big=True)),
@@ -111,6 +117,15 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 ),
             )
 
+    @staticmethod
+    async def update_roles(member: discord.Member, add_roles=None, remove_roles=None):
+        if add_roles:
+            add_roles = add_roles if isinstance(add_roles, list) else [add_roles]
+            await member.add_roles(*add_roles)
+        if remove_roles:
+            remove_roles = remove_roles if isinstance(remove_roles, list) else [remove_roles]
+            await member.remove_roles(*remove_roles)
+
     async def get_message_user(self, context, message_id):
         result = parse_sql(
             await self.sql.fetch("SELECT user_id FROM approval_messages WHERE message_id=$1", int(message_id)),
@@ -134,12 +149,60 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         await context.defer()
         await self._action_user_button(context, "approve")
 
+    @cog_component()
+    async def deny(self, context: ComponentContext):
+        await context.defer()
+        await self._action_user_button(context, "deny")
+
+    @cog_component()
+    async def done(self, context: ComponentContext):
+        await context.defer(hidden=True)
+        member = context.author
+        redditor = await self.get_redditor(member)
+        if not redditor:
+            await context.send(
+                embed=generate_result_embed(
+                    "I was unable to verify your reddit account, please try authorizing with the link above again.",
+                    EmbedType.error,
+                    contact_me=True,
+                )
+            )
+            return
+        if not await self.execute_preemptive(member, redditor):
+            result = await self.get_user_info(member.id)
+            if result:
+                if result.status == "approved":
+                    await self.approve_user(member, redditor, None, previous=True)
+                elif result.status == "denied":
+                    await self.deny_user(context, member, redditor, previous=True)
+                else:
+                    await self.set_verified(member)
+                    if self.grandfather_role in member.roles:
+                        await self.approve_user(member, redditor, None, grandfathered=True)
+                note = (
+                    "\nNote: you will have to wait for approval before you are allowed to access the server."
+                    if self.approved_role not in member.roles
+                    else ""
+                )
+                await context.send(
+                    embed=generate_result_embed(f"Verified u/{redditor} successfully!{note}"), hidden=True
+                )
+                await self.send_approval_request(member, redditor)
+            else:
+                await context.send(
+                    embed=generate_result_embed(
+                        "I was unable to verify your reddit account, please send `/verify` to retry verification.",
+                        EmbedType.error,
+                        contact_me=True,
+                    )
+                )
+
     async def _action_user_button(self, context, action):
         try:
             if await self._check_authorized(context):
                 user = await self.get_message_user(context, context.origin_message_id)
                 await self.action_user(context, user, action, send_embed=False)
-                user_info = await self.get_user(context.guild, user.id)
+                user_info = await self.get_user_info(user.id)
                 if user_info and user_info.status in ["approved", "denied"]:
                     buttons = await self.generate_approval_buttons(user.id, user_info.status)
                     await context.origin_message.edit(embed=context.origin_message.embeds[0], components=buttons)
@@ -171,11 +234,6 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         ]
         return [create_actionrow(*buttons)]
 
-    @cog_component()
-    async def deny(self, context: ComponentContext):
-        await context.defer()
-        await self._action_user_button(context, "deny")
-
     @staticmethod
     def get_incompatible(roles, *pairs):
         incompatible_pairs = []
@@ -188,46 +246,40 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     def has_roles(func, roles, *roles_to_check):
         return func([role in roles for role in roles_to_check])
 
-    async def action_user(self, context, member, action, grandfathered=False, send_embed=True):
+    async def action_user(self, context, member, action, grandfathered=False, send_embed=True, hidden=False):
         if action in ["approve", "deny"]:
+            redditor = await self.get_redditor(member)
             if action == "approve":
-                await self.approve_user(member, context.author, grandfathered=grandfathered, send_embed=send_embed)
+                await self.approve_user(
+                    member, redditor, context.author, grandfathered=grandfathered, send_embed=send_embed
+                )
             elif action == "deny":
-                redditor = await self.get_redditor(None, member)
-                await self.deny_user(context, member, redditor, context.author, context.message)
-        member_str = member.mention if isinstance(member, discord.Member) else f"<@{member}>"
-        await self.success_embed(
-            context, f"Successfully {'approved' if action == 'approve' else 'denied'} {member_str}!"
-        )
+                await self.deny_user(context, member, redditor, context.author, context.message, hidden=hidden)
+        if not grandfathered:
+            member_str = member.mention if isinstance(member, discord.Member) else f"<@{member}>"
+            await context.send(
+                embed=generate_result_embed(
+                    f"Successfully {'approved' if action == 'approve' else 'denied'} {member_str}!"
+                ),
+                hidden=hidden,
+            )
 
-    async def action_users(self, context, user_ids, action):
-        users = set(user_ids)
-        failed = []
-        for user in users:
-            if isinstance(user, NotFound):
-                failed.append(user)
-            else:
-                await self.action_user(context, user, action)
-        if len(failed) == 1:
-            await self.error_embed(context, f"Could not find user matching {failed[0].arg}")
-        elif len(failed) > 1:
-            failed_users = "\n".join([user.arg for user in failed])
-            await self.error_embed(context, f"Could not find the following users:\n\n{failed_users}")
-
+    # todo: maybe use context and hidden
     async def approve_user(
-        self, member, actor, approval_message=None, grandfathered=False, preemptive=False, send_embed=True
+        self,
+        member,
+        redditor,
+        actor,
+        approval_message=None,
+        grandfathered=False,
+        preemptive=False,
+        previous=False,
+        send_embed=True,
     ):
         try:
             roles_to_add = [self.approved_role]
-            if member:
-                redditor = await self.get_redditor(None, member)
+            roles_to_remove = [self.unapproved_role, self.denied_role]
             if isinstance(member, discord.Member):
-                if not redditor:
-                    await self.error_embed(
-                        self.approval_channel,
-                        f"Unable to approve {member.mention} because they have not verified their reddit account yet.",
-                    )
-                    return
                 redditor = await self.reddit.redditor(redditor, fetch=True)
                 moderated_subreddits = await redditor.moderated()
                 results = parse_sql(await self.sql.fetch("SELECT name, role_id FROM subreddits"))
@@ -237,34 +289,136 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                         for result in results
                         if result.name in moderated_subreddits and self.bot.snoo_guild.get_role(result.role_id)
                     ]
-                await member.add_roles(*roles_to_add)
-                await member.remove_roles(
-                    self.unverified_role, self.unapproved_role, self.grandfather_role, self.denied_role
-                )
+                    roles_to_remove += [
+                        self.bot.snoo_guild.get_role(result.role_id)
+                        for result in results
+                        if result.name not in moderated_subreddits and self.bot.snoo_guild.get_role(result.role_id)
+                    ]
+                await self.update_roles(member, add_roles=roles_to_add, remove_roles=roles_to_remove)
             member = member.id if isinstance(member, discord.Member) else member
-            preemptive_note = ""
-            if preemptive:
-                _, actor, timestamp = await self.check_pre_redditor(redditor)
-                preemptive_note = f"whitelisted by {actor.mention} at {timestamp}"
-            else:
-                await self.sql.execute("DELETE FROM pre_redditors WHERE redditor=$1", redditor)
-            note = (
-                f"\nNote: This user was {'grandfathered in' if grandfathered else preemptive_note}."
-                if preemptive or grandfathered
-                else ""
-            )
+            note = "\nNote: This user was " if all([redditor, preemptive, grandfathered, previous]) else ""
+            if redditor:
+                if preemptive:
+                    _, actor, timestamp = await self.check_pre_redditor(redditor)
+                    note += f"whitelisted by {actor.mention} at {timestamp}."
+                elif grandfathered:
+                    note += "grandfathered in."
+                elif previous:
+                    actor, timestamp = await self.get_actor_for_member(member)
+                    if isinstance(actor, int):
+                        if actor == 0:
+                            note += f"grandfathered in at {timestamp}."
+                        else:
+                            note += f"previously approved by {actor} at {timestamp}."
+                    elif isinstance(actor, discord.Member):
+                        note += f"previously approved by {actor.mention} at {timestamp}."
+                    else:
+                        note += f"previously approved by someone."
+                else:
+                    await self.sql.execute("DELETE FROM pre_redditors WHERE redditor=$1", str(redditor))
             if send_embed:
-                await self.success_embed(self.approval_channel, f"Successfully approved {member.mention}!{note}")
-            query_args = [member, 0 if grandfathered else actor.id, "approve"]
-            await self.sql.execute("UPDATE redditmodhelper.users SET status=$1 WHERE user_id=$2", "approved", member)
-            if approval_message:
-                query = "INSERT INTO approval_log (user_id, actor_id, action_type, channel_id, message_id) VALUES ($1, $2, $3, $4, $5)"
-                query_args += [approval_message.channel.id, approval_message.id]
-            else:
-                query = "INSERT INTO approval_log (user_id, actor_id, action_type) VALUES ($1, $2, $3)"
-            await self.sql.execute(query, *query_args)
+                await self.success_embed(
+                    self.approval_channel, f"Successfully {'re' if previous else ''}approved <@{member}>!{note}"
+                )
+            if not previous or preemptive or grandfathered:
+                query_args = [member, 0 if grandfathered else actor.id, "approve"]
+                await self.sql.execute(
+                    "UPDATE redditmodhelper.users SET status=$1 WHERE user_id=$2", "approved", member
+                )
+                if approval_message:
+                    query = "INSERT INTO approval_log (user_id, actor_id, action_type, channel_id, message_id) VALUES ($1, $2, $3, $4, $5)"
+                    query_args += [approval_message.channel.id, approval_message.id]
+                else:
+                    query = "INSERT INTO approval_log (user_id, actor_id, action_type) VALUES ($1, $2, $3)"
+                await self.sql.execute(query, *query_args)
         except Exception as error:
-            self.log.exception(error)
+            message = f"Failed to approve <@{member.id if isinstance(member, discord.Member) else member}>."
+            await self.error_embed(self.approval_channel, message)
+
+    async def deny_user(
+        self,
+        context,
+        member,
+        redditor,
+        actor=None,
+        approval_message=None,
+        preemptive=False,
+        previous=False,
+        hidden=False,
+        send_embed=True,
+    ):
+        try:
+            if previous and isinstance(member, discord.Member):
+                actor, _ = await self.get_actor_for_member(member.id)
+                if await self.get_bot_config("auto_kick"):
+                    if not self.bot.debug:
+                        if isinstance(actor, discord.Member):
+                            await member.kick(
+                                reason=f"Previously denied by {actor.name}#{actor.discriminator} ({actor.id})"
+                            )
+                        else:
+                            await member.kick(reason=f"Previously denied by <@{actor}>")
+                    await self.success_embed(
+                        self.approval_channel, f"Successfully kicked {member.mention} from the server!"
+                    )
+                else:
+                    await self.update_roles(member, add_roles=self.denied_role, remove_roles=self.unapproved_role)
+                    await self.success_embed(self.approval_channel, f"Successfully redenied {member.mention}!")
+            else:
+                if preemptive:
+                    _, actor, timestamp = await self.check_pre_redditor(redditor)
+                    deny_type = "Blacklisted"
+                    note = f" They were {deny_type.lower()} by {actor} at {timestamp}."
+                else:  # only clear if denied and don't clear blacklist status
+                    await self.sql.execute("DELETE FROM pre_redditors WHERE redditor=$1", redditor)
+                    deny_type = "Denied"
+                    note = ""
+                if isinstance(member, discord.Member):
+                    if not self.bot.debug and context:
+                        confirm = await context.prompt(
+                            f"Would you like to kick {member.mention} from the server?{note}",
+                            hidden=hidden,
+                        )
+                        if confirm:
+                            try:
+                                await member.kick(
+                                    reason=f"{deny_type} by {actor.name}#{actor.discriminator} ({actor.id})"
+                                )
+                                await context.send(
+                                    embed=generate_result_embed(
+                                        f"Successfully kicked {member.mention} from the server!"
+                                    ),
+                                    hidden=hidden,
+                                )
+                            except Exception as error:
+                                await context.send(
+                                    embed=generate_result_embed(
+                                        f"Failed to kick {member.mention} from the server!",
+                                        result_type=EmbedType.error,
+                                        contact_me=True,
+                                    ),
+                                    hidden=hidden,
+                                )
+                                self.log.exception(error)
+                    await self.update_roles(member, add_roles=self.denied_role, remove_roles=self.unapproved_role)
+                    member = member.id
+
+                query_args = [member, actor.id, "deny"]
+                await self.sql.execute("UPDATE redditmodhelper.users SET status=$1 WHERE user_id=$2", "denied", member)
+                if approval_message:
+                    query = "INSERT INTO approval_log (user_id, actor_id, action_type, channel_id, message_id) VALUES ($1, $2, $3, $4, $5)"
+                    query_args += [approval_message.channel.id, approval_message.id]
+                else:
+                    query = "INSERT INTO approval_log (user_id, actor_id, action_type) VALUES ($1, $2, $3)"
+                await self.sql.execute(query, *query_args)
+        except Exception:
+            message = f"Failed to deny <@{member.id if isinstance(member, discord.Member) else member}>."
+            if context:
+                await context.send(
+                    embed=generate_result_embed(message, result_type=EmbedType.error, contact_me=True), hidden=hidden
+                )
+            else:
+                await self.error_embed(self.approval_channel, message)
 
     async def check_existing_status(self, action, context, redditor):
         result = await self.sql.fetchval(
@@ -276,31 +430,27 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 await self.sql.fetch("SELECT * FROM redditmodhelper.users WHERE user_id=$1", member_id), fetch_one=True
             )
             if result:
-                if (result.status != "denied" and action == "denied") or (
+                if (result.status == "approved" and action == "denied") or (
                     result.status == "denied" and action == "approved"
                 ):
-                    if result.status in ["approved", "denied"]:
-                        actor, timestamp = await self.get_actor_for_member(member_id)
-                        actor_str = (
-                            actor.mention
-                            if isinstance(actor, discord.Member)
-                            else "grandfather"
-                            if actor == 0
-                            else f"<@{actor}>"
-                        )
-                        confirm = await context.prompt(
-                            f"It appears that {actor_str} already {result.status} u/{redditor} on {timestamp}.\nDo you want to override?"
-                        )
-                    elif result.status in ["verified", "unverified"]:
-                        confirm = await context.prompt(
-                            f"It appears that u/{redditor} is currently {result.status}.\nDo you want to override?"
-                        )
+                    actor, timestamp = await self.get_actor_for_member(member_id)
+                    actor_str = (
+                        actor.mention
+                        if isinstance(actor, discord.Member)
+                        else "grandfather"
+                        if actor == 0
+                        else f"<@{actor}>"
+                    )
+                    confirm = await context.prompt(
+                        f"It appears that {actor_str} already {result.status} u/{redditor} on {timestamp}.\nDo you want to override?"
+                    )
                     if confirm:
-                        if action == "denied":
-                            member = context.guild.get_member(member_id)
-                            if member:
+                        member = context.guild.get_member(member_id)
+                        if member:
+                            if action == "denied":
                                 await self.deny_user(context, member, redditor, context.author)
-                                await self.success_embed(context, f"Successfully kicked {member.mention}!")
+                            elif action == "approved":
+                                await self.approve_user(member, redditor, context.actor)
                         await self.sql.execute(
                             "UPDATE redditmodhelper.users SET status=$1 WHERE user_id=$2", action, member_id
                         )
@@ -315,71 +465,11 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         )
         if result:
             status = result.status
-            actor = self.bot.snoo_guild.get_member(result.actor_id) or result.actor_id
+            actor = self.bot.snoo_guild.get_member(result.actor_id).mention or result.actor_id
             timestamp = result.timestamp.astimezone().strftime(TIME_FORMAT)
             return status, actor, timestamp
         else:
             return [None] * 3
-
-    async def deny_user(
-        self, context, member, redditor, actor=None, approval_message=None, preemptive=False, previous=False
-    ):
-        try:
-            if previous and isinstance(member, discord.Member):
-                actor, _ = await self.get_actor_for_member(member.id)
-                if not self.bot.debug and await self.get_bot_config("auto_kick"):
-                    if isinstance(actor, discord.Member):
-                        await member.kick(
-                            reason=f"Previously denied by {actor.name}#{actor.discriminator} ({actor.id})"
-                        )
-                    else:
-                        await member.kick(reason=f"Previously denied by <@{actor}>")
-                    await self.success_embed(
-                        context or self.approval_channel, f"Successfully kicked {member.mention} from the server!"
-                    )
-                await member.add_roles(self.denied_role)
-                await member.remove_roles(self.unapproved_role)
-            else:
-                if preemptive:
-                    _, actor, _ = await self.check_pre_redditor(redditor)
-                    deny_type = "Blacklisted"
-                else:  # only clear if denied and don't clear blacklist status
-                    await self.sql.execute("DELETE FROM pre_redditors WHERE redditor=$1", redditor)
-                    deny_type = "Denied"
-                if isinstance(member, discord.Member):
-                    if not self.bot.debug and context:
-                        hidden = context.channel_id not in self.admin_category.channels
-                        confirm = await context.prompt(
-                            f'Would you like to kick {member.mention} from the server? They were {deny_type.lower()} by {actor.mention}."',
-                            hidden=hidden,
-                        )
-                        if confirm:
-                            try:
-                                await member.kick(
-                                    reason=f"{deny_type} by {actor.name}#{actor.discriminator} ({actor.id})"
-                                )
-                                await self.success_embed(
-                                    context, f"Successfully kicked {member.mention} from the server!"
-                                )
-                            except Exception as error:
-                                await self.error_embed(context, f"Failed to kick {member.mention} from the server!")
-                                self.log.exception(error)
-                    await member.add_roles(self.denied_role)
-                    await member.remove_roles(self.unapproved_role)
-                    member = member.id
-                await self.sql.execute("UPDATE redditmodhelper.users SET status=$1 WHERE user_id=$2", "denied", member)
-                query_args = [member, actor.id, "deny"]
-                if approval_message:
-                    query = "INSERT INTO approval_log (user_id, actor_id, action_type, channel_id, message_id) VALUES ($1, $2, $3, $4, $5)"
-                    query_args += [approval_message.channel.id, approval_message.id]
-                else:
-                    query = "INSERT INTO approval_log (user_id, actor_id, action_type) VALUES ($1, $2, $3)"
-                await self.sql.execute(query, *query_args)
-        except Exception:
-            await self.error_embed(
-                context or self.approval_channel,
-                f"Failed to deny <@{member.id if isinstance(member, discord.Member) else member}>.",
-            )
 
     async def execute_preemptive(self, member, redditor):
         preemptive_status, actor, timestamp = await self.check_pre_redditor(redditor)
@@ -388,8 +478,11 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             await self.deny_user(None, member, redditor, actor, preemptive=True)
         elif preemptive_status == "approved":
             preemptive_status = "whitelisted"
-            await self.approve_user(member, actor, preemptive=True, send_embed=False)
-        return preemptive_status, actor, timestamp
+            await self.approve_user(redditor, member, actor, preemptive=True, send_embed=False)
+        if all([preemptive_status, actor, timestamp]):
+            await self.send_approval_request(member, redditor, preemptive_status)
+            return True
+        return False
 
     async def get_actor_for_member(self, member_id):
         logs = parse_sql(
@@ -408,96 +501,59 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             return None, None
         return actor, logs[0].actioned_at.astimezone().strftime(TIME_FORMAT)
 
-    async def get_user(self, guild, member_id, return_member=False):
-        if member_id > 2147483647:
-            query = "SELECT * FROM redditmodhelper.users WHERE user_id=$1"
-        else:
-            query = "SELECT * FROM redditmodhelper.users WHERE id=$1"
-        result = parse_sql(await self.sql.fetch(query, member_id), fetch_one=True)
-        if result:
-            return guild.get_member(result.user_id) if return_member else result
-        else:
-            return None
-
-    async def insert_user(self, member):
-        self.sql = self.bot.pool
-        joined_at = None
-        if hasattr(member, "joined_at"):
-            joined_at = member.joined_at
-        result = parse_sql(
-            await self.sql.fetch("SELECT * FROM redditmodhelper.users WHERE user_id=$1", member.id), fetch_one=True
+    async def get_user_info(self, member_id):
+        return parse_sql(
+            await self.sql.fetch("SELECT * FROM redditmodhelper.users WHERE user_id=$1", member_id), fetch_one=True
         )
-        if result:
-            if result.joined_at is None and joined_at:
-                await self.sql.execute(
-                    "UPDATE redditmodhelper.users SET joined_at=$1, username=$2 WHERE user_id=$3",
-                    joined_at,
-                    member.name,
-                    member.id,
-                )
-        else:
-            await self.sql.execute(
-                "INSERT INTO redditmodhelper.users (user_id, username, created_at, joined_at) VALUES ($1, $2, $3, $4)",
+
+    async def insert_user(self, member, on_join=False):
+        self.sql = self.bot.pool
+        return parse_sql(
+            await self.sql.fetch(
+                f"""INSERT INTO redditmodhelper.users (user_id, username, created_at, joined_at, first_joined_at, join_count)
+                VALUES ($1, $2, $3, $4, $4, 1)
+                ON CONFLICT (user_id) DO UPDATE SET joined_at=excluded.joined_at {', join_count=join_count+1' if on_join else ''}
+                RETURNING *""",
                 member.id,
                 member.name,
                 member.created_at,
-                joined_at,
-            )
+                getattr(member, "join_at", None),
+            ),
+            fetch_one=True,
+        )
 
     async def on_join(self, member):
         if member.bot:
             return
-        await member.add_roles(self.unverified_role)
         self.sql = self.bot.pool
-        await self.insert_user(member)
-        redditor = await self.get_redditor(None, member)
-        if redditor:
-            await member.add_roles(self.verified_role, self.unapproved_role)
-            await member.remove_roles(self.unverified_role)
-            message = await self.success_embed(
-                self.dmz_channel,
-                f"Verified u/{redditor} successfully!",
-            )
-            welcome_message = await self.dmz_channel.send(
+        result = await self.insert_user(member, on_join=True)
+        await self.update_roles(member, add_roles=self.unverified_role)
+        redditor = await self.get_redditor(member)
+        if redditor:  # already verified
+            await self.set_verified(member, update_status=result.status == "unverified")
+            await self.dmz_channel.send(
                 f"Welcome {member.mention}! You have already verified your account.\nNote: You may have to wait for approval before your able to access the rest of the server."
             )
-            preemptive_status = await self.execute_preemptive(member, redditor)
-            if all(preemptive_status):
-                await self.send_approval_request(member, redditor, preemptive_status)
-            else:
-                result = await self.get_user(member.guild, member.id)
+            if not await self.execute_preemptive(member, redditor):
                 if result.status == "approved":
-                    await member.add_roles(self.approved_role)
-                    await member.remove_roles(self.unapproved_role, self.grandfather_role)
+                    await self.approve_user(member, redditor, None, previous=True)
                 elif result.status == "denied":
                     await self.deny_user(None, member, redditor, previous=True)
-                elif result.status == "unverified":
-                    await self.sql.execute(
-                        "UPDATE redditmodhelper.users set status=$1 WHERE user_id=$2", "verified", member.id
-                    )
                 await self.send_approval_request(member, redditor)
         else:
-            embed = discord.Embed(
-                title="Reddit Account Verification",
-                description="In order for me to verify your Reddit username, I need you to grant me **temporary** access:",
+            await self.dmz_channel.send(
+                f"Welcome {member.mention}! Before you can access this server you need to verify your reddit account.\n\nUse the /verify slash command to get started."
             )
-            verification = self.bot.credmgr.userVerification.create(str(member.id), self.bot.credmgr_bot.redditApp)
-            embed.add_field(
-                name="Authenticate Here:",
-                value=self.bot.credmgr_bot.redditApp.genAuthUrl(userVerification=verification),
-                inline=True,
-            )
-            message = await self.dmz_channel.send(embed=embed)
-            welcome_message = await self.dmz_channel.send(
-                f"Welcome {member.mention}! Send `.done` after you have verified your reddit account using the above link."
-            )
-        if message and welcome_message:
-            await self.sql.execute(
-                "UPDATE redditmodhelper.users SET link_message_id=$1, welcome_message_id=$2 WHERE user_id=$3",
-                message.id,
-                welcome_message.id,
-                member.id,
-            )
+
+    def generate_verification_embed(self, member):
+        embed = discord.Embed(
+            title="Reddit Account Verification",
+            description="In order for me to verify your Reddit username, I need you to grant me **temporary** access:",
+        )
+        embed.add_field(
+            name="Authenticate Here:", value=self.bot.credmgr_bot.redditApp.genAuthUrl(userVerification=str(member.id))
+        )
+        return embed
 
     async def pre_action_user(self, context, redditor, action, hidden):
         result = parse_sql(
@@ -537,7 +593,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             )
 
     async def send_approval_request(self, member, redditor, preemptive_status=None):
-        result = await self.get_user(member.guild, member.id)
+        result = await self.get_user_info(member.id)
         if result:
             previous_action = None
             actor = None
@@ -657,8 +713,11 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     @checks.authorized_roles()
     async def _on_verify(self, context):
         member = context.guild.get_member(857055123078119474)
-        await member.remove_roles(self.approved_role, self.grandfather_role, self.unverified_role, self.denied_role)
-        await member.add_roles(self.unapproved_role, self.verified_role)
+        await self.update_roles(
+            member,
+            add_roles=[self.unapproved_role, self.verified_role],
+            remove_roles=[self.approved_role, self.grandfather_role, self.unverified_role, self.denied_role],
+        )
         await self.sql.execute(
             "UPDATE redditmodhelper.users SET status='verified' WHERE user_id=$1", 857055123078119474
         )
@@ -668,7 +727,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     @checks.is_admin()
     async def adjuser(self, context: Context):
         for user in context.guild.members:
-            redditor = await self.get_redditor(context, user)
+            redditor = await self.get_redditor(user)
             roles = set(user.roles)
             if redditor:
                 if self.has_roles(all, roles, self.approved_role, self.verified_role) and not self.has_roles(
@@ -730,7 +789,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     async def assignunv(self, context):
         for user in context.guild.members:
             await self.insert_user(user)
-            redditor = await self.get_redditor(context, user)
+            redditor = await self.get_redditor(user)
             if self.approved_role not in user.roles:
                 if redditor:
                     await user.add_roles(self.verified_role, self.approved_role)
@@ -762,8 +821,9 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     )
     async def _blacklist_add(self, context, redditor):
         """Preemptively deny a redditor from accessing this server."""
-        user = await self.get_mod(context, redditor)
         hidden = context.channel not in self.admin_category.channels
+        await context.defer(hidden=hidden)
+        user = await self.get_mod(context, redditor)
         await self.pre_action_user(context, user, "denied", hidden)
 
     @cog_subcommand(
@@ -778,21 +838,50 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             allowed_roles=[785203089001938974, 786230454286024775], allowed_users=[393801572858986496]
         ),
     )
-    async def _blacklist_remove(self, context, redditor):
+    async def _blacklist_remove(self, context: InteractionContext, redditor):
         """Remove a redditor from the blacklist."""
+        list_type = "blacklist"
         hidden = context.channel not in self.admin_category.channels
-        try:
-            await self.sql.execute("DELETE FROM pre_redditors WHERE status='denied' AND redditor=$1", redditor)
-            await context.send(
-                embed=generate_result_embed(f"Removed to remove u/{redditor} from blacklist."), hidden=hidden
-            )
-        except Exception:
+        await context.defer(hidden=hidden)
+        user = await self.get_mod(context, redditor)
+        status = "approved" if list_type == "whitelist" else "denied"
+        result = parse_sql(
+            await self.sql.fetch("SELECT * FROM pre_redditors WHERE redditor=$1 and status=$2", user, status),
+            fetch_one=True,
+        )
+        if result:
+            try:
+                await self.sql.execute("DELETE FROM pre_redditors WHERE status=$1 AND redditor=$2", status, user)
+                await context.send(embed=generate_result_embed(f"Removed u/{user} from {list_type}."), hidden=hidden)
+            except Exception:
+                await context.send(
+                    embed=generate_result_embed(
+                        f"Failed to remove u/{user} from {list_type}.", result_type=EmbedType.error, contact_me=True
+                    ),
+                    hidden=hidden,
+                )
+        else:
             await context.send(
                 embed=generate_result_embed(
-                    f"Failed to remove u/{redditor} from blacklist.", contact_me=True, result_type=EmbedType.error
+                    f"u/{user} is not currently {list_type}ed.",
+                    result_type=EmbedType.warning,
+                    title=f"Not {list_type.title()}ed",
                 ),
                 hidden=hidden,
             )
+            return
+        result = await self.sql.fetchval(
+            "SELECT user_id FROM credential_store.user_verifications WHERE redditor=$1", user
+        )
+        if result:
+            member = context.guild.get_member(int(result))
+            if member:
+                action = "approve" if status == "denied" else "deny"
+                confirm = await context.prompt(
+                    f"u/{user} is currently in the server {member.mention}. Would you like to {action} them?"
+                )
+                if confirm:
+                    await self.action_user(context, member, action, send_embed=False, hidden=hidden)
 
     @command(name="deny")
     @checks.authorized_roles()
@@ -804,133 +893,43 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     async def _approve(self, context):
         await context.send("This command has been converted to a slash command: `/approve`", delete_after=10)
 
-    @command()
-    async def done(self, context: Context, userid: Optional[int]):
-        if context.guild:
-            if userid:
-                member = discord.utils.get(context.guild.members, id=userid)
-            else:
-                member = context.author
-        else:
-            member = discord.utils.get(context.bot.snoo_guild.members, id=context.author.id)
-        if member:
-            redditor = await self.get_redditor(context, member)
-            if not redditor:
-                await self.error_embed(
-                    context,
-                    "I was unable to verify your reddit account, please try authorizing with the link above again.",
-                )
-                return
-            preemptive_status = await self.execute_preemptive(member, redditor)
-            if all(preemptive_status):
-                await self.send_approval_request(member, redditor, preemptive_status)
-            else:
-                result = await self.get_user(member.guild, member.id)
-                if result:
-                    if result.status == "approved":
-                        await member.add_roles(self.approved_role, self.verified_role)
-                        await member.remove_roles(self.unverified_role, self.unapproved_role)
-                        await self.success_embed(context, f"Verified u/{redditor} successfully!")
-                        await self.send_approval_request(member, redditor)
-                    elif result.status == "denied":
-                        await self.deny_user(context, member, redditor, previous=True)
-                        await self.send_approval_request(member, redditor)
-                    else:
-                        await member.add_roles(self.unapproved_role, self.verified_role)
-                        await member.remove_roles(self.unverified_role)
-                        result = parse_sql(
-                            await self.sql.fetch(
-                                "UPDATE redditmodhelper.users set status=$1 WHERE user_id=$2 RETURNING id, link_message_id, welcome_message_id",
-                                "verified",
-                                member.id,
-                            ),
-                            fetch_one=True,
-                        )
-                        if result:
-                            try:
-                                messages_to_delete = [
-                                    self.dmz_channel.get_partial_message(getattr(result, attr))
-                                    for attr in ["link_message_id", "welcome_message_id"]
-                                    if getattr(result, attr)
-                                ]
-                                await context.message.delete()
-                                for message in messages_to_delete:
-                                    await message.delete()
-                            except Exception:
-                                pass
-                            if self.grandfather_role in member.roles:
-                                await self.action_user(context, member, "approve", True)
-                                await self.success_embed(
-                                    context,
-                                    f"Verified u/{redditor} successfully!",
-                                )
-                                await self.send_approval_request(member, redditor)
-                                return
-                            note = (
-                                "\nNote: you will have to wait for approval before you are allowed to access the server."
-                                if self.approved_role not in member.roles
-                                else ""
-                            )
-                            await self.success_embed(
-                                context,
-                                f"Verified u/{redditor} successfully!{note}",
-                            )
-                            await self.send_approval_request(member, redditor)
-                        else:
-                            await self.error_embed(
-                                context,
-                                "I was unable to verify your reddit account, please send `.verify` to retry verification.",
-                            )
-                else:
-                    await self.error_embed(
-                        context,
-                        "I was unable to verify your reddit account, please send `.verify` to retry verification.",
-                    )
-        else:
-            await self.error_embed(
-                context,
-                "You must be a member of the server to use this command.",
-            )
-
     @command(name="verify")
     async def _verify(self, context):
         await context.send("This command has been converted to a slash command: `/verify`")
 
-    @cog_slash(
-        options=[
-            create_option(
-                "member", "Discord user to verify. You must be authorized to specify this.", discord.Member, False
-            ),
-        ]
-    )
-    async def verify(self, context, member=None):
-        """Manually verify your account Reddit account."""
+    @cog_slash()
+    async def verify(self, context: InteractionContext):
+        """Verify your account Reddit account."""
         await context.defer(hidden=True)
-        users = await self.check_multiple_auth(context, "member", [member or context.author], context.author)
-        if not users:
-            member = context.author
-        else:
-            member = users[0]
-        await self.insert_user(member)
-        embed = discord.Embed(
-            title="Reddit Account Verification",
-            description="In order for me to verify your Reddit username, I need you to grant me **temporary** access:",
-        )
-        verification = self.bot.credmgr.userVerification.create(str(member.id), self.bot.credmgr_bot.redditApp)
-        embed.add_field(
-            name="Authenticate Here:",
-            value=self.bot.credmgr_bot.redditApp.genAuthUrl(userVerification=verification),
-            inline=True,
-        )
-        try:
-            await context.send("Please check your DMs.", hidden=True)
-            await member.send(embed=embed)
-            await member.send(f"Send `.done` after you have verified your reddit account using the above link.")
-        except discord.Forbidden:
-            await context.send(
-                "I was not able to send you a direct message for verification, please allow direct messages from server members and try again.",
+        author = context.author
+        result = await self.insert_user(author)
+        redditor = await self.get_redditor(author)
+        confirm = True
+        if redditor:
+            await self.set_verified(author, update_status=result.status == "unverified")
+            confirm = await context.prompt(
+                f"It appears you have already verified your reddit account (u/{redditor}). Would you like to reverify?",
                 hidden=True,
             )
+        if confirm:
+            embed = self.generate_verification_embed(author)
+            components = [create_actionrow(create_button(style=ButtonStyle.blurple, custom_id="done", label="Done"))]
+            message = await context.send(
+                f"Press the `Done` button below after you have verified your reddit account using this link:",
+                embed=embed,
+                components=components,
+                hidden=True,
+            )
+            await self.sql.execute(
+                "INSERT INTO approval_messages (user_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                author.id,
+                int(message["id"]),
+            )
+
+    async def set_verified(self, member, update_status=True):
+        await self.update_roles(member, add_roles=self.verified_role, remove_roles=self.unverified_role)
+        if update_status:
+            await self.sql.execute("UPDATE redditmodhelper.users set status=$1 WHERE user_id=$2", "verified", member.id)
 
 
 def setup(bot):

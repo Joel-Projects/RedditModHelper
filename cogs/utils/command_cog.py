@@ -35,7 +35,7 @@ class CommandCog(commands.Cog):
         await context.send(embed=embed)
 
     @staticmethod
-    async def error_embed(context, message, delete_after=None, contact_me=True):
+    async def error_embed(context, message, delete_after=None, contact_me=True, **context_kwargs):
         embed = Embed(
             title="Command Error",
             color=discord.Color.red(),
@@ -44,7 +44,7 @@ class CommandCog(commands.Cog):
             else message,
         )
         embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
-        return await context.send(embed=embed, delete_after=delete_after)
+        return await context.send(embed=embed, delete_after=delete_after, **context_kwargs)
 
     @staticmethod
     def generate_error_embed(message):
@@ -90,13 +90,13 @@ class CommandCog(commands.Cog):
         return msg
 
     @staticmethod
-    async def success_embed(context, message, title="Success!"):
+    async def success_embed(context, message, title="Success!", **context_kwargs):
         if isinstance(message, Embed):
             embed = message
         else:
             embed = Embed(title=title, color=discord.Color.green(), description=message)
         embed.set_footer(text=time.strftime("%B %d, %Y at %I:%M:%S %p %Z", time.localtime()))
-        return await context.send(embed=embed)
+        return await context.send(embed=embed, **context_kwargs)
 
     @staticmethod
     async def warning_embed(context, message):
@@ -137,11 +137,10 @@ class CommandCog(commands.Cog):
             with self.bot.tempReddit(user) as reddit:
                 redditor = await reddit.user.me()
                 moderated = await redditor.moderated()
-        except Exception as error:
-            self.log.error(error)
+        except Exception:
             pass
         if not moderated:
-            redditor = await reddit.redditor(user)
+            redditor = await self.reddit.redditor(user)
             moderated = await redditor.moderated()
         subreddits = [(i.display_name, i.subscribers) for i in moderated]
         subscribers = sum([subreddit[1] for subreddit in subreddits])
@@ -252,10 +251,7 @@ class CommandCog(commands.Cog):
             await self.error_embed(context, "This command can only be used in a sub channel.")
             return
 
-    async def get_redditor(self, context=None, member=None):
-        if not member:
-            if context:
-                member = context.author
+    async def get_redditor(self, member=None):
         user = None
         if isinstance(member, (discord.Member, discord.User)):
             member_id = member.id
@@ -265,11 +261,11 @@ class CommandCog(commands.Cog):
             member_id = None
         if member_id:
             try:
-                verification = self.bot.credmgr.userVerification(str(member_id))
-                if verification:
-                    user = verification.redditor
-            except credmgr.exceptions.NotFound:
-                pass
+                user = await self.sql.fetchval(
+                    "SELECT redditor FROM credential_store.user_verifications WHERE user_id=$1", str(member_id)
+                )
+            except Exception as error:
+                self.log.exception(error)
         return user
 
     async def prompt_options(

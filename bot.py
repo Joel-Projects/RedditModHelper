@@ -10,7 +10,6 @@ import aiohttp
 import asyncpg
 import asyncpraw
 import discord
-from BotUtils import BotServices
 from discord.ext import commands, tasks
 from gitlab import Gitlab
 from gitlab.v4.objects import Project
@@ -21,11 +20,7 @@ from cogs.utils.command_cog import CommandCog
 from cogs.utils.config import Config
 from cogs.utils.slash import SlashCommand
 
-bot_name = config.bot_name
-description = "Hello! I am a bot written by Lil_SpazJoekp"
-
-services = BotServices(bot_name)
-log = services.logger()
+from . import bot_name, description, log, services
 
 initial_extensions = (
     "cogs.admin",
@@ -72,7 +67,7 @@ class RedditModHelper(commands.AutoShardedBot):
         self.services = services
         self.credmgr = services.credmgr
         self.credmgr_bot = self.credmgr.bot(bot_name)
-        self.reddit = asyncpraw.Reddit(**services.reddit("Lil_SpazJoekp").config._settings)
+        self.reddit = services.reddit("Lil_SpazJoekp", asyncpraw=True)
         self.tempReddit = partial(self.switch_reddit_instance, bot=self)
         self.pool: asyncpg.pool.Pool = pool
         self.sql: asyncpg.pool.Pool = self.pool
@@ -142,21 +137,11 @@ class RedditModHelper(commands.AutoShardedBot):
 
     def log_error(self, context, error):
         try:
+            log.error(f"In {context.command}:\n{error.original.__class__.__name__}: {error.original}")
             traceback.print_tb(error.original.__traceback__)
-            if not self.debug:
-                log.error(
-                    f"In {context.command.qualified_name}:\n{error.original.__class__.__name__}: {error.original}"
-                )
-            else:
-                print(f"In {context.command.qualified_name}:")
-                print(f"{error.original.__class__.__name__}: {error.original}")
         except AttributeError:
+            log.error(f"In {context.command}:\n{error.__class__.__name__}: {error}")
             traceback.print_tb(error.__traceback__)
-            if not self.debug:
-                log.error(f"In {context.command.qualified_name}:\n{error.__class__.__name__}: {error}")
-            else:
-                print(f"In {context.command.qualified_name}:")
-                print(f"{error.__class__.__name__}: {error}")
 
     def get_guild_prefixes(self, guild, *, local_inject=_prefix_callable):
         proxy_msg = discord.Object(id=0)
@@ -316,7 +301,7 @@ class RedditModHelper(commands.AutoShardedBot):
 
         def __enter__(self):
             log.debug(f"Switching to u/{self.user}")
-            return asyncpraw.Reddit(**self.bot.services.reddit(self.user).config._settings)
+            return self.bot.services.reddit(self.user, asyncpraw=True)
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             log.debug("Switching back to u/Lil_SpazJoekp")

@@ -2,7 +2,6 @@ from discord_slash.client import SlashCommand as _SlashCommand
 
 
 class SlashCommand(_SlashCommand):
-
     def __init__(self, *args, **kwargs):
         self.debug_mode = False
         super().__init__(*args, **kwargs)

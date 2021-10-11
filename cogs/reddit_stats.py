@@ -522,11 +522,11 @@ class RedditStats(CommandCog):
                     f"Could not find [u/{moderator}](https://reddit.com/u/{moderator}). Either the account does not exist, has been deleted, or has been suspended.",
                 )
         elif discord_user:
-            redditor = await self.get_redditor(context, discord_user)
+            redditor = await self.get_redditor(discord_user)
             if not redditor:
                 error_message = "That user hasn't verified their account yet."
         else:
-            redditor = await self.get_redditor(context)
+            redditor = await self.get_redditor(context.author)
             if not redditor:
                 error_message = "Please use `/stats <user>` or verify your Reddit account with `/verify`."
         if error_message:
