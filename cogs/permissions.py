@@ -508,6 +508,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     async def insert_user(self, member, on_join=False):
         self.sql = self.bot.pool
+        print('insert user')
         return parse_sql(
             await self.sql.fetch(
                 f"""INSERT INTO redditmodhelper.users (user_id, username, created_at, joined_at, first_joined_at, join_count)
@@ -698,7 +699,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     @command()
     @checks.authorized_roles()
     async def _on_join(self, context):
-        member = context.guild.get_member(857055123078119474)
+        member = context.guild.get_member(446113305614876682)
         await member.remove_roles(
             self.approved_role,
             self.grandfather_role,
