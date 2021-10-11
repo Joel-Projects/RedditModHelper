@@ -536,10 +536,9 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             return
         self.sql = self.bot.pool
         result = await self.insert_user(member, on_join=True)
-        await self.update_roles(member, add_roles=self.unverified_role)
+        await self.update_roles(member, add_roles=[self.unverified_role, self.unapproved_role])
         redditor = await self.get_redditor(member)
         if redditor:  # already verified
-            await self.update_roles(member, add_roles=self.unapproved_role)
             await self.set_verified(member, update_status=result.status == "unverified")
             await self.dmz_channel.send(
                 f"Welcome {member.mention}! You have already verified your account.\nNote: You may have to wait for approval before your able to access the rest of the server."
