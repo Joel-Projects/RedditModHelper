@@ -10,8 +10,8 @@ import click
 
 import config
 from cogs.utils.db import Table
-from RedditModHelper import __version__
-from RedditModHelper.bot import RedditModHelper, initial_extensions, log, services
+from . import __version__
+from .bot import RedditModHelper, initial_extensions, log, services
 
 if sys.platform != "darwin":
     try:
