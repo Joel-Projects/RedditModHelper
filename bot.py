@@ -10,6 +10,7 @@ import aiohttp
 import asyncpg
 import asyncpraw
 import discord
+from BotUtils import BotServices
 from discord.ext import commands, tasks
 from gitlab import Gitlab
 from gitlab.v4.objects import Project
@@ -20,7 +21,13 @@ from cogs.utils.command_cog import CommandCog
 from cogs.utils.config import Config
 from cogs.utils.slash import SlashCommand
 
-from . import bot_name, description, log, services
+__version__ = "1.1.0"
+bot_name = config.bot_name
+description = "Hello! I am a bot written by Lil_SpazJoekp"
+
+services = BotServices(bot_name)
+log = services.logger()
+
 
 initial_extensions = (
     "cogs.admin",
