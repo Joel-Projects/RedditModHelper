@@ -509,19 +509,16 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
     async def insert_user(self, member, on_join=False):
         self.sql = self.bot.pool
         print('insert user')
-        return parse_sql(
+        results = parse_sql(
             await self.sql.fetch(
-                f"""INSERT INTO redditmodhelper.users (user_id, username, created_at, joined_at, first_joined_at, join_count)
-                VALUES ($1, $2, $3, $4, $4, 1)
-                ON CONFLICT (user_id) DO UPDATE SET joined_at=excluded.joined_at {', join_count=join_count+1' if on_join else ''}
-                RETURNING *""",
-                member.id,
-                member.name,
-                member.created_at,
-                getattr(member, "join_at", None),
-            ),
-            fetch_one=True,
-        )
+                f"""INSERT INTO redditmodhelper.users (user_id, username, created_at, joined_at, first_joined_at)
+                        VALUES ($1, $2, $3, $4, $4)
+                        ON CONFLICT (user_id) DO UPDATE SET joined_at=excluded.joined_at
+                        RETURNING *""", member.id, member.name, member.created_at, getattr(member, "join_at", None)), fetch_one=True)
+        if on_join:
+            await self.sql.execute('UPDATE redditmodhelper.users SET join_count=join_count+1 WHERE user_id=$1', member.id)
+            results = parse_sql(await self.sql.fetch('select * from redditmodhelper.users WHERE user_id=$1', member.id), fetch_one=True)
+        return results
 
     async def on_join(self, member):
         if member.bot:
