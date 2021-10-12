@@ -174,7 +174,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 if result.status == "approved":
                     await self.approve_user(member, redditor, None, previous=True)
                 elif result.status == "denied":
-                    await self.deny_user(context, member, redditor, previous=True)
+                    await self.deny_user(None, member, redditor, previous=True)
                 else:
                     await self.set_verified(member)
                     if self.grandfather_role in member.roles:
@@ -367,8 +367,14 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             else:
                 if preemptive:
                     _, actor, timestamp = await self.check_pre_redditor(redditor)
+                    if isinstance(actor, discord.Member):
+                        actor_str = actor.mention
+                    elif isinstance(actor, int):
+                        actor_str = f"<@{actor}>"
+                    else:
+                        actor_str = "someone"
                     deny_type = "Blacklisted"
-                    note = f" They were {deny_type.lower()} by {actor} at {timestamp}."
+                    note = f" They were {deny_type.lower()} by {actor_str} at {timestamp}."
                 else:  # only clear if denied and don't clear blacklist status
                     await self.sql.execute("DELETE FROM pre_redditors WHERE redditor=$1", redditor)
                     deny_type = "Denied"
@@ -402,8 +408,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                                 self.log.exception(error)
                     await self.update_roles(member, add_roles=self.denied_role, remove_roles=self.unapproved_role)
                     member = member.id
-
-                query_args = [member, actor.id, "deny"]
+                query_args = [member, actor.id if isinstance(actor, discord.Member) else actor, "deny"]
                 await self.sql.execute("UPDATE redditmodhelper.users SET status=$1 WHERE user_id=$2", "denied", member)
                 if approval_message:
                     query = "INSERT INTO approval_log (user_id, actor_id, action_type, channel_id, message_id) VALUES ($1, $2, $3, $4, $5)"
@@ -411,7 +416,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 else:
                     query = "INSERT INTO approval_log (user_id, actor_id, action_type) VALUES ($1, $2, $3)"
                 await self.sql.execute(query, *query_args)
-        except Exception:
+        except Exception as error:
             message = f"Failed to deny <@{member.id if isinstance(member, discord.Member) else member}>."
             if context:
                 await context.send(
@@ -465,7 +470,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         )
         if result:
             status = result.status
-            actor = self.bot.snoo_guild.get_member(result.actor_id).mention or result.actor_id
+            actor = self.bot.snoo_guild.get_member(result.actor_id) or result.actor_id
             timestamp = result.timestamp.astimezone().strftime(TIME_FORMAT)
             return status, actor, timestamp
         else:
@@ -480,7 +485,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             preemptive_status = "whitelisted"
             await self.approve_user(redditor, member, actor, preemptive=True, send_embed=False)
         if all([preemptive_status, actor, timestamp]):
-            await self.send_approval_request(member, redditor, preemptive_status)
+            await self.send_approval_request(member, redditor, [preemptive_status, actor, timestamp])
             return True
         return False
 
@@ -560,7 +565,12 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             description="In order for me to verify your Reddit username, I need you to grant me **temporary** access:",
         )
         embed.add_field(
-            name="Authenticate Here:", value=self.bot.credmgr_bot.redditApp.genAuthUrl(userVerification=str(member.id))
+            name="Authenticate Here:",
+            value=self.bot.credmgr_bot.redditApp.genAuthUrl(
+                userVerification=self.bot.credmgr.userVerification.create(
+                    str(member.id), self.bot.credmgr_bot.redditApp
+                )
+            ),
         )
         return embed
 
@@ -924,7 +934,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             embed = self.generate_verification_embed(author)
             components = [create_actionrow(create_button(style=ButtonStyle.blurple, custom_id="done", label="Done"))]
             message = await context.send(
-                f"Press the `Done` button below after you have verified your reddit account using this link:",
+                "Press the `Done` button below after you have verified your reddit account using this link:",
                 embed=embed,
                 components=components,
                 hidden=True,
