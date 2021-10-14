@@ -542,19 +542,10 @@ class RedditStats(CommandCog):
             subreddits,
             subscribers,
             zero_count,
+            top_20,
         ) = await self.get_and_calculate_subs(user)
         embed = self._gen_embed(user, sub_count, subscribers, sub_average, remaining, zero_count)
-        value_string = (
-            "\n".join(
-                [
-                    f"{sub_rank}. {subreddit[0]}: {subreddit[1]:,}"
-                    for sub_rank, subreddit in enumerate(subreddits[:20], 1)
-                ]
-            )
-            if subreddits
-            else "This user does not moderate any subreddits."
-        )
-        embed.add_field(name="Top 20 Subreddits", value=value_string, inline=False)
+        embed.add_field(name="Top 20 Subreddits", value=top_20, inline=False)
         result = parse_sql(
             await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", user), fetch_one=True
         )

@@ -358,6 +358,14 @@ class Meta(CommandCog):
         issue = self.bot.gitlab_project.issues.create(data)
         await self.success_embed(context, "Successfully sent feedback!")
 
+    @command(aliases=["td"], rest_is_raw=True)
+    @checks.is_spaz()
+    async def todo(self, context, *, items):
+        todo_items = items.split("\n")
+        for item in todo_items:
+            message = await context.send(item)
+            await message.add_reaction("✅")
+
     @command(aliases=["rc"])
     async def runningcommands(self, context):
         tasks = copy.copy(self.bot.running_tasks)

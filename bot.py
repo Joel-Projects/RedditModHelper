@@ -75,7 +75,7 @@ class RedditModHelper(commands.AutoShardedBot):
         self.credmgr = services.credmgr
         self.credmgr_bot = self.credmgr.bot(bot_name)
         self.reddit = services.reddit("Lil_SpazJoekp", asyncpraw=True)
-        self.tempReddit = partial(self.switch_reddit_instance, bot=self)
+        self.temp_reddit = partial(self.switch_reddit_instance, bot=self)
         self.pool: asyncpg.pool.Pool = pool
         self.sql: asyncpg.pool.Pool = self.pool
         self.log = log

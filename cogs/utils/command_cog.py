@@ -5,9 +5,9 @@ import typing
 from typing import TYPE_CHECKING
 
 import asyncprawcore
-import credmgr
 import discord
 from asyncpg import Pool
+from credmgr.exceptions import NotFound
 from discord import Embed
 from discord.ext import commands
 
@@ -23,7 +23,7 @@ class CommandCog(commands.Cog):
         self.log = bot.log
         self.reddit = bot.reddit
         self.sql: Pool = bot.sql
-        self.tempReddit = None
+        self.temp_reddit = None
         super().__init__()
 
     @staticmethod
@@ -132,23 +132,29 @@ class CommandCog(commands.Cog):
             return
 
     async def get_and_calculate_subs(self, user):
-        moderated = None
         try:
-            with self.bot.tempReddit(user) as reddit:
+            with self.bot.temp_reddit(user) as reddit:
                 redditor = await reddit.user.me()
-                moderated = await redditor.moderated()
-        except Exception:
-            pass
-        if not moderated:
+        except NotFound:
             redditor = await self.reddit.redditor(user)
-            moderated = await redditor.moderated()
-        subreddits = [(i.display_name, i.subscribers) for i in moderated]
-        subscribers = sum([subreddit[1] for subreddit in subreddits])
+        subreddits = await redditor.moderated()
+        _subscriber_totals = [subreddit.subscribers for subreddit in subreddits]
+        subscribers = sum(_subscriber_totals)
         sub_count = len(subreddits)
-        zero_count = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 0])
-        remaining = len([subreddit[1] for subreddit in subreddits if subreddit[1] == 1])
+        zero_count = _subscriber_totals.count(0)
+        remaining = _subscriber_totals.count(1)
         sub_average = int(round(subscribers / len(subreddits))) if subreddits else 0
-        return remaining, sub_average, sub_count, subreddits, subscribers, zero_count
+        top_20 = (
+            "\n".join(
+                [
+                    f"{sub_rank}. {subreddit.display_name}: {subreddit.subscribers:,}"
+                    for sub_rank, subreddit in enumerate(subreddits[:20], 1)
+                ]
+            )
+            if subreddits
+            else "This user does not moderate any subreddits."
+        )
+        return remaining, sub_average, sub_count, subreddits, subscribers, zero_count, top_20
 
     async def get_authorized_user(self, context):
         if self.bot.debug and context.channel.id == 816020436940226611:
@@ -251,14 +257,14 @@ class CommandCog(commands.Cog):
             await self.error_embed(context, "This command can only be used in a sub channel.")
             return
 
-    async def get_redditor(self, member=None):
-        user = None
+    async def get_redditor(self, member):
         if isinstance(member, (discord.Member, discord.User)):
             member_id = member.id
         elif isinstance(member, int):
             member_id = member
         else:
             member_id = None
+        user = None
         if member_id:
             try:
                 user = await self.sql.fetchval(
@@ -266,6 +272,7 @@ class CommandCog(commands.Cog):
                 )
             except Exception as error:
                 self.log.exception(error)
+                user = None
         return user
 
     async def prompt_options(

@@ -79,6 +79,13 @@ def admin_or_permissions(**perms):
     return commands.check(predicate)
 
 
+def is_spaz():
+    def predicate(context):
+        return context.author.id == 393801572858986496
+
+    return commands.check(predicate)
+
+
 def is_in_guilds(*guild_ids):
     def predicate(context):
         guild = context.guild
