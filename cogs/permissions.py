@@ -103,7 +103,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     @Cog.listener()
     async def on_member_join(self, member):
-        await self._on_join(member)
+        await self.on_join(member)
 
     @Cog.listener()
     async def on_ready(self):
@@ -304,7 +304,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             self.unverified_role,
             self.denied_role,
         )
-        await self._on_join(member)
+        await self.on_join(member)
 
     @command(name="approve")
     @checks.authorized_roles()
@@ -519,7 +519,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             )
         return results
 
-    async def _on_join(self, member):
+    async def on_join(self, member):
         if member.bot:
             return
         self.sql = self.bot.pool
