@@ -153,7 +153,7 @@ def check_admin(self, data):
             if not pinged:
                 webhooks = cache.get(f"{data['subreddit']}_admin_webhooks")
                 if not webhooks:
-                    subreddits = Webhook.query.filter_by(subreddit=data["subreddit"]).all()
+                    subreddits = models.Webhook.query.filter_by(subreddit=data["subreddit"]).all()
                     if webhooks:
                         webhooks = [subreddit.admin_webhook for subreddit in subreddits]
                 if webhooks:
