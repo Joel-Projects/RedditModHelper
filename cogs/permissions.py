@@ -48,17 +48,7 @@ class ApprovalLog(db.Table, table_name="approval_log"):
     actioned_at = db.Column(db.Datetime(timezone=True), default="NOW()")
 
 
-class ApprovalMessages(db.Table, table_name="approval_messages"):
-    id = db.PrimaryKeyColumn()
-    user_id = db.Column(
-        db.ForeignKey("users", "user_id", sql_type=db.Integer(big=True)),
-        index=True,
-        nullable=False,
-    )
-    message_id = db.Column(db.Integer(big=True), index=True, nullable=False, unique=True)
-
-
-class VerificationMessages(db.Table, table_name="verification_messages"):
+class ComponentMessages(db.Table, table_name="component_messages"):
     id = db.PrimaryKeyColumn()
     user_id = db.Column(
         db.ForeignKey("users", "user_id", sql_type=db.Integer(big=True)),
@@ -78,6 +68,8 @@ class PreRedditors(db.Table, table_name="pre_redditors"):
 
 class Permissions(CommandCog, command_attrs={"hidden": True}):
     """A collection of Permission commands."""
+
+    slash_command_attrs = dict(guild_ids=[785198941535731715])
 
     # noinspection PyTypeChecker
     def __init__(self, bot):
@@ -103,7 +95,8 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     @Cog.listener()
     async def on_member_join(self, member):
-        await self.on_join(member)
+        if member.guild.id == 785198941535731715:
+            await self.on_join(member)
 
     @Cog.listener()
     async def on_ready(self):
@@ -143,6 +136,9 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         member = context.author
         redditor = await self.get_redditor(member)
         if redditor:
+            if context.guild != self.bot.snoo_guild:
+                await context.send(embed=generate_result_embed(f"Verified u/{redditor} successfully!"), hidden=True)
+                return
             await self._set_verified(member)
         else:
             await context.send(
@@ -188,16 +184,18 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             )
             await context.send(embed=generate_result_embed(f"Verified u/{redditor} successfully!{note}"), hidden=True)
 
-    @cog_slash()
+    @cog_slash(guild_ids=None)
     async def verify(self, context: InteractionContext):
         """Verify your account Reddit account."""
         await context.defer(hidden=True)
         author = context.author
-        result = await self._insert_user(author)
+        if context.guild == self.bot.snoo_guild:
+            result = await self._insert_user(author)
         redditor = await self.get_redditor(author)
         confirm = True
         if redditor:
-            await self._set_verified(author, update_status=result.status == "unverified")
+            if context.guild == self.bot.snoo_guild:
+                await self._set_verified(author, update_status=result.status == "unverified")
             confirm = await context.prompt(
                 f"It appears you have already verified your reddit account (u/{redditor}). Would you like to reverify?",
                 hidden=True,
@@ -212,14 +210,14 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
                 hidden=True,
             )
             await self.sql.execute(
-                "INSERT INTO approval_messages (user_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                "INSERT INTO component_messages (user_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 author.id,
                 int(message["id"]),
             )
 
     @cog_subcommand(
-        base="blacklist",
         name="add",
+        base="blacklist",
         base_default_permission=False,
         options=[create_option("redditor", "Redditor to blacklist.", str, True)],
     )
@@ -237,8 +235,8 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         await self._pre__action_user(context, user, "denied")
 
     @cog_subcommand(
-        base="blacklist",
         name="remove",
+        base="blacklist",
         base_default_permission=False,
         options=[create_option("redditor", "Redditor to remove from the blacklist.", str, True)],
     )
@@ -255,8 +253,8 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
         await self._remove_pre_action(context, redditor, "blacklist")
 
     @cog_subcommand(
-        base="whitelist",
         name="add",
+        base="whitelist",
         base_default_permission=False,
         options=[create_option("redditor", "Redditor to whitelist.", str, True)],
     )
@@ -482,7 +480,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
 
     async def _get_message_user(self, context, message_id):
         result = parse_sql(
-            await self.sql.fetch("SELECT user_id FROM approval_messages WHERE message_id=$1", int(message_id)),
+            await self.sql.fetch("SELECT user_id FROM component_messages WHERE message_id=$1", int(message_id)),
             fetch_one=True,
         )
         if result:
@@ -689,7 +687,7 @@ class Permissions(CommandCog, command_attrs={"hidden": True}):
             buttons = await self._generate_approval_buttons(member.id, previous_action)
             message = await self.approval_channel.send(embed=embed, components=buttons)
             await self.sql.execute(
-                "INSERT INTO approval_messages (user_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                "INSERT INTO component_messages (user_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 member.id,
                 message.id,
             )

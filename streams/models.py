@@ -1,4 +1,4 @@
-from sqlalchemy import CHAR, TIMESTAMP, BigInteger, Boolean, Column, String, Text
+from sqlalchemy import CHAR, Constraint, ForeignKeyConstraint, TIMESTAMP, BigInteger, Boolean, Column, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 
 from . import Session, services
@@ -40,6 +40,7 @@ class Subreddit(Base):
     __table_args__ = {"schema": "redditmodhelper"}
 
     name = Column(Text, primary_key=True)
+    server_id = Column(BigInteger, primary_key=True)
     role_id = Column(BigInteger, nullable=False)
     channel_id = Column(BigInteger, nullable=False)
     modlog_account = Column(Text)
@@ -49,7 +50,7 @@ class Subreddit(Base):
     query = Session.query_property()
 
     def __repr__(self):
-        return f"<Subreddit(subreddit='{self.name}', mod_account='{self.modlog_account}'>"
+        return f"<Subreddit(subreddit={self.name!r}, mod_account={self.modlog_account!r}>"
 
 
 class Webhook(Base):
@@ -57,10 +58,13 @@ class Webhook(Base):
     __table_args__ = {"schema": "redditmodhelper"}
 
     subreddit = Column(Text, primary_key=True)
+    server_id = Column(BigInteger, primary_key=True)
     admin_webhook = Column(Text)
     alert_webhook = Column(Text)
+
+    ForeignKeyConstraint(("subreddit", "server_id"), ["subreddits.name", "invoice.server_id"])
 
     query = Session.query_property()
 
     def __repr__(self):
-        return f"<Webhook(subreddit='{self.subreddit}'>"
+        return f"<Webhook(subreddit={self.subreddit!r} server_id={self.server_id}>"

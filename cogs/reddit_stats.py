@@ -40,6 +40,7 @@ class ModqueueSubscriptions(db.Table, table_name="modqueue_subscriptions"):
         nullable=False,
         unique=True,
     )
+    server_id = db.Column(db.Integer(big=True), nullable=False)
     item_type = db.Column(db.ModqueueType, nullable=False, default="all")
     threshold = db.Column(db.Integer(), nullable=False, default=100)
     interval = db.Column(db.Interval("MINUTE"), default="30m")

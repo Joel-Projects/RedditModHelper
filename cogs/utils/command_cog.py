@@ -192,7 +192,7 @@ class CommandCog(commands.Cog):
                 reddit = self.reddit
             else:
                 reddit = self.bot.get_reddit(account)
-            subreddits = await (await reddit.user.me()).moderated()
+            subreddits = list(await (await reddit.user.me()).moderated())
             if subreddit in subreddits:
                 sub = subreddits[subreddits.index(subreddit)]
                 mod_info = (await sub.moderator(account))[0]
@@ -254,7 +254,7 @@ class CommandCog(commands.Cog):
         if result:
             return result[0]
         else:
-            await self.error_embed(context, "This command can only be used in a sub channel.")
+            await self.error_embed(context, "This command can only be used in a sub channel. Use the ")
             return
 
     async def get_redditor(self, member):

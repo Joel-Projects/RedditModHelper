@@ -32,8 +32,8 @@ class Settings(CommandCog):
                 values = value.strip("[]").split(",")
                 return [await self.get_type(context, value) for value in values]
             elif value.startswith("{"):
-                removeExtraSpaces = re.compile(r"\s*([\{\}:,\[\]])\s*")
-                quoteWords = re.compile(r"([\{\[,:])*(\w)([,\]+:\}])")
+                removeExtraSpaces = re.compile(r"\s*([{}:,\[\]])\s*")
+                quoteWords = re.compile(r"([{[,:])*(\w)([,\]+:}])")
                 spaces_removed = removeExtraSpaces.sub("\\1", value)
                 if spaces_removed:
                     result = quoteWords.sub('\\1"\\2"\\3', spaces_removed)

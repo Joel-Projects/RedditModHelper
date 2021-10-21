@@ -90,7 +90,7 @@ class RedditModHelper(commands.AutoShardedBot):
         self.identifies = defaultdict(list)
         self.prefixes = Config("prefixes.json")
         self.blacklist = Config("blacklist.json")
-        self.slash = SlashCommand(self, sync_commands=True, debug_guild=785198941535731715)
+        self.slash = SlashCommand(self)
         for extension in initial_extensions:
             try:
                 self.load_extension(extension)
@@ -300,6 +300,8 @@ class RedditModHelper(commands.AutoShardedBot):
         self.file_storage: discord.TextChannel = self.get_channel(824789213651271710)
         if not self.print_servers.is_running():
             self.print_servers.start()
+        if not self.is_closed():
+            await self.slash.sync_all_commands(True, True)
 
     class switch_reddit_instance:
         def __init__(self, user, bot):

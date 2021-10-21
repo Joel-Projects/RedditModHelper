@@ -151,14 +151,15 @@ def check_admin(self, data):
         if modlog_item:
             pinged = modlog_item.pinged
             if not pinged:
-                webhook = cache.get(f"{data['subreddit']}_admin_webhook")
-                if not webhook:
-                    subreddit = models.Webhook.query.get(data["subreddit"])
-                    if subreddit:
-                        webhook = subreddit.admin_webhook
-                if webhook:
-                    send_admin_alert.apply_async(args=[data, webhook], queue="admin_alerts")
-                    sql.execute("UPDATE mirror.modlog SET pinged=true WHERE id=%s", (data["id"],))
+                webhooks = cache.get(f"{data['subreddit']}_admin_webhooks")
+                if not webhooks:
+                    subreddits = Webhook.query.filter_by(subreddit=data["subreddit"]).all()
+                    if webhooks:
+                        webhooks = [subreddit.admin_webhook for subreddit in subreddits]
+                if webhooks:
+                    for webhook in webhooks:
+                        send_admin_alert.apply_async(args=[data, webhook], queue="admin_alerts")
+                        sql.execute("UPDATE mirror.modlog SET pinged=true WHERE id=%s", (data["id"],))
         else:
             self.retry()
 

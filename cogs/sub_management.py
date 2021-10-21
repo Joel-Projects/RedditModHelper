@@ -13,11 +13,12 @@ from discord_slash.utils.manage_commands import create_option
 from .utils import db
 from .utils.command_cog import CommandCog
 from .utils.converters import RedditorConverter, SubredditConverter
-from .utils.utils import parse_sql
+from .utils.utils import EmbedType, generate_result_embed, parse_sql
 
 
 class Subreddits(db.Table, table_name="subreddits"):
     name = db.Column(db.String, primary_key=True, unique=True, nullable=False)
+    server_id = db.Column(db.Integer(big=True), nullable=False)
     mod_role = db.Column(db.Integer(big=True), nullable=False)
     channel_id = db.Column(db.Integer(big=True), nullable=False)
     modlog_account = db.Column(db.String, nullable=False)
@@ -26,7 +27,8 @@ class Subreddits(db.Table, table_name="subreddits"):
 
 
 class Webhooks(db.Table, table_name="webhooks"):
-    subreddit = db.Column(db.String, primary_key=True, unique=True, nullable=False)
+    server_id = db.Column(db.String, primary_key=True, unique=True, nullable=False)
+    channel_id = db.Column(db.Integer(big=True), nullable=False)
     admin_webhook = db.Column(db.String)
     alert_webhook = db.Column(db.String)
 
@@ -49,7 +51,7 @@ class SubredditManagement(CommandCog):
     ):
         if result:
             channel = self.bot.get_channel(result.channel_id)
-            mod_role = self.bot.snoo_guild.get_role(result.role_id)
+            mod_role = self.bot.get_guild(result.server_id).get_role(result.role_id)
             mod_account = result.modlog_account
             alert_channel = self.bot.get_channel(result.alert_channel_id) if result.alert_channel_id else None
         embed = Embed(title=title or "Confirmation", color=discord.Color.green())
@@ -95,17 +97,29 @@ class SubredditManagement(CommandCog):
     ):
         """Add or update a subreddit. If you need help or have questions, contact Lil_SpazJoekp."""
         await context.defer()
+        guild_id = context.guild.id
+        if not context.channel:
+            await context.send(
+                embed=generate_result_embed(
+                    "This must be used in a server.", result_type=EmbedType.Error, contact_me=True
+                )
+            )
+            return
         subreddit = await SubredditConverter().convert(context, subreddit)
         mod_account = await RedditorConverter().convert(context, mod_account)
         if None in [subreddit, mod_account]:
             return
-        results = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit))
-        if results:
-            confirm = await context.prompt(
-                f"r/{subreddit} is already added. Do you want to overwrite it?", channel=context.channel
+        results = parse_sql(
+            await self.sql.fetch(
+                "SELECT * FROM subreddits WHERE name=$1 AND server_id=$2",
+                subreddit,
+                guild_id,
             )
+        )
+        if results:
+            confirm = await context.prompt(f"r/{subreddit} is already added. Do you want to overwrite it?")
             if not confirm:
-                await context.send("Cancelled")
+                return
         required_scopes = ["identity", "modlog", "mysubreddits", "read", "modposts"]
         try:
             reddit: praw.Reddit = self.bot.credmgr_bot.redditApp.reddit(mod_account)
@@ -146,17 +160,18 @@ class SubredditManagement(CommandCog):
                 contact_me=False,
             )
             return
-        if alert_channel:
-            await self.create_or_update_alert_channel(context, subreddit, alert_channel)
         try:
             await self.sql.execute(
-                "INSERT INTO subreddits (name, role_id, channel_id, modlog_account, alert_channel_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name) DO UPDATE SET role_id=EXCLUDED.role_id, channel_id=EXCLUDED.channel_id, modlog_account=EXCLUDED.modlog_account, alert_channel_id=EXCLUDED.alert_channel_id",
+                "INSERT INTO subreddits (name, server_id, role_id, channel_id, modlog_account, alert_channel_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (name, server_id) DO UPDATE SET role_id=EXCLUDED.role_id, channel_id=EXCLUDED.channel_id, modlog_account=EXCLUDED.modlog_account, alert_channel_id=EXCLUDED.alert_channel_id",
                 subreddit,
+                guild_id,
                 mod_role.id,
                 channel.id,
                 mod_account,
                 alert_channel.id if alert_channel else alert_channel,
             )
+            if alert_channel:
+                await self.create_or_update_alert_channel(context, subreddit, alert_channel)
             self.restart_stream()
             embed = await self.generate_subreddit_embed(
                 "added", subreddit, channel, mod_role, mod_account, alert_channel
@@ -179,28 +194,47 @@ class SubredditManagement(CommandCog):
     ):
         """Removes a subreddit from the bot."""
         await context.defer()
+        if not context.channel:
+            await context.send(
+                embed=generate_result_embed(
+                    "This must be used in a server.", result_type=EmbedType.Error, contact_me=True
+                )
+            )
+            return
         subreddit = await SubredditConverter().convert(context, subreddit)
         if subreddit is None:
             return
-        result = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit), fetch_one=True)
+        result = parse_sql(
+            await self.sql.fetch(
+                "SELECT * FROM subreddits WHERE name=$1 AND server_id=$2", subreddit, context.guild.id
+            ),
+            fetch_one=True,
+        )
         if result:
             authorized_roles = await context.cog.get_bot_config("authorized_roles")
             is_authorized = any([role.id in authorized_roles for role in context.author.roles])
             if result.channel_id == context.channel_id or is_authorized:
-                confirm = await context.prompt(f"Are you *sure* you want to delete r/{subreddit} from this bot?")
+                confirm = await context.prompt(
+                    f"Are you *sure* you want to delete r/{subreddit} from this bot?", hidden=False
+                )
                 if not confirm:
                     return
                 try:
                     await self.sql.execute(
-                        "INSERT INTO deleted_subreddits (name, role_id, channel_id, modlog_account, alert_channel_id) VALUES ($1, $2, $3, $4, $5)",
+                        "INSERT INTO deleted_subreddits (name, server_id, role_id, channel_id, modlog_account, alert_channel_id) VALUES ($1, $2, $3, $4, $5, $6)",
                         subreddit,
+                        context.guild.id,
                         result.role_id,
                         result.channel_id,
                         result.modlog_account,
                         result.alert_channel_id,
                     )
-                    await self.sql.execute("DELETE FROM subreddits WHERE name=$1", subreddit)
-                    await self.sql.execute("DELETE FROM webhooks WHERE subreddit=$1", subreddit)
+                    await self.sql.execute(
+                        "DELETE FROM webhooks WHERE subreddit=$1 AND server_id=$2", subreddit, context.guild.id
+                    )
+                    await self.sql.execute(
+                        "DELETE FROM subreddits WHERE name=$1 AND server_id=$2", subreddit, context.guild.id
+                    )
                     alert_channel = self.bot.get_channel(result.alert_channel_id)
                     if alert_channel:
                         channel_webhooks = await alert_channel.webhooks()
@@ -227,10 +261,22 @@ class SubredditManagement(CommandCog):
     async def view(self, context, subreddit):
         """View a subreddit."""
         await context.defer()
+        if not context.channel:
+            await context.send(
+                embed=generate_result_embed(
+                    "This must be used in server.", result_type=EmbedType.Error, contact_me=True
+                )
+            )
+            return
         subreddit = await SubredditConverter().convert(context, subreddit)
         if subreddit is None:
             return
-        result = parse_sql(await self.sql.fetch("SELECT * FROM subreddits WHERE name=$1", subreddit), fetch_one=True)
+        result = parse_sql(
+            await self.sql.fetch(
+                "SELECT * FROM subreddits WHERE name=$1 AND server_id=$2", subreddit, context.guild.id
+            ),
+            fetch_one=True,
+        )
         if result:
             embed = await self.generate_subreddit_embed(
                 None, subreddit, result=result, title=f"r/{subreddit}", url=f"https://www.reddit.com/r/{subreddit}"
@@ -255,7 +301,12 @@ class SubredditManagement(CommandCog):
                 mod_avatar = file.read()
         mapping = {"admin_webhook": "Admin Action Alert", "alert_webhook": "Subreddit Alert"}
         webhook_names = ["admin_webhook", "alert_webhook"]
-        result = parse_sql(await self.sql.fetch("SELECT * FROM webhooks WHERE subreddit=$1", subreddit), fetch_one=True)
+        result = parse_sql(
+            await self.sql.fetch(
+                "SELECT * FROM webhooks WHERE subreddit=$1 AND server_id=$2", subreddit, context.guild.id
+            ),
+            fetch_one=True,
+        )
         webhooks = {}
         channel_webhooks = await alert_channel.webhooks()
         if result:
@@ -283,17 +334,19 @@ class SubredditManagement(CommandCog):
                 if alert_webhook:
                     alert_webhook = alert_webhook.url
                 await self.sql.execute(
-                    "UPDATE webhooks SET admin_webhook=$1, alert_webhook=$2 WHERE subreddit=$3",
+                    "UPDATE webhooks SET admin_webhook=$1, alert_webhook=$2 WHERE subreddit=$3 AND server_id=$4",
                     admin_webhook,
                     alert_webhook,
                     subreddit,
+                    context.guild.id,
                 )
         else:
             admin_webhook = await alert_channel.create_webhook(name=mapping["admin_webhook"], avatar=admin_avatar)
             alert_webhook = await alert_channel.create_webhook(name=mapping["alert_webhook"], avatar=mod_avatar)
             await self.sql.execute(
-                "INSERT INTO webhooks (subreddit, admin_webhook, alert_webhook) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                "INSERT INTO webhooks (subreddit, server_id, admin_webhook, alert_webhook) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
                 subreddit,
+                context.guild.id,
                 admin_webhook.url,
                 alert_webhook.url,
             )

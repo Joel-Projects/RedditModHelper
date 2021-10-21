@@ -41,14 +41,15 @@ def setup_logging():
         logging.getLogger("discord.http").setLevel(logging.ERROR)
         logging.getLogger("discord.gateway").setLevel(logging.ERROR)
         logging.getLogger("discord.state").setLevel(logging.ERROR)
-        logging.getLogger("discord_slash").setLevel(logging.DEBUG)
+        logging.getLogger("discord_slash").setLevel(0)
+        logging.getLogger("discord_slash.client").setLevel(0)
         log.info(f"Starting {config.bot_name} | Version: {__version__}")
         yield
     finally:
         handlers = log.handlers[:]
-        for hdlr in handlers:
-            hdlr.close()
-            log.removeHandler(hdlr)
+        for handler in handlers:
+            handler.close()
+            log.removeHandler(handler)
 
 
 def run_bot():

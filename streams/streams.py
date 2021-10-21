@@ -1,5 +1,7 @@
 import asyncio
 import os.path
+from collections import defaultdict
+
 import sys
 import time
 from datetime import datetime, timedelta
@@ -111,20 +113,12 @@ def get_last_cache_reset():
 
 async def main():
     subreddits = Subreddit.query.all()
-    to_set = {}
-    accounts = {}
+    accounts = defaultdict(set)
     for subreddit in subreddits:
-        accounts.setdefault(subreddit.modlog_account, [])
-        accounts[subreddit.modlog_account].append(subreddit.name)
-        subreddit_webhooks = Webhook.query.get(subreddit.name)
-        if subreddit_webhooks:
-            for webhook_type in ["admin_webhook", "alert_webhook"]:
-                webhook = getattr(subreddit_webhooks, webhook_type)
-                if webhook:
-                    to_set[f"{subreddit.name}_{webhook_type}"] = webhook
-    cache.set_multi(to_set)
+        accounts[subreddit.modlog_account].add(subreddit.name)
     streams = []
     for redditor, subreddits in accounts.items():
+        subreddits = list(subreddits)
         for chunk, subreddit_chunk in enumerate([subreddits[x : x + 3] for x in range(0, len(subreddits), 3)], 1):
             streams.append(start_streaming(subreddit_chunk, redditor, chunk))
     if sys.platform != "darwin":
@@ -133,7 +127,7 @@ async def main():
             zip_longest(
                 *[
                     reversed(chunk) if i % 2 == 0 else chunk
-                    for i, chunk in enumerate([subreddits[x : x + 10] for x in range(0, len(subreddits), 10)])
+                    for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
                 ]
             )
         )
@@ -189,14 +183,18 @@ def set_last_cache_reset():
 
 
 def set_webhooks():
-    subreddit_webhooks = Webhook.query.all()
     to_set = {}
-    for subreddit_webhook in subreddit_webhooks:
-        if subreddit_webhook:
-            for webhook_type in ["admin_webhook", "alert_webhook"]:
-                webhook = getattr(subreddit_webhook, webhook_type)
-                if webhook:
-                    to_set[f"{subreddit_webhook.subreddit}_{webhook_type}"] = webhook
+    results = Webhook.query.session.execute(
+        """SELECT
+      subreddit,
+      array_to_string(array_agg(distinct admin_webhook),',') AS admin_webhooks,
+      array_to_string(array_agg(distinct alert_webhook),',') AS alert_webhooks
+    FROM webhooks GROUP BY subreddit;"""
+    )
+    subreddits = results.fetchall()
+    for subreddit, admin, alert in subreddits:
+        to_set[f"{subreddit}_admin_webhooks"] = admin.split(",")
+        to_set[f"{subreddit}_alert_webhooks"] = alert.split(",")
     try:
         cache.set_multi(to_set)
     except Exception:
