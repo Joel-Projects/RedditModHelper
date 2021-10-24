@@ -533,46 +533,44 @@ class RedditStats(CommandCog):
         if error_message:
             await self.error_embed(context, error_message)
         if redditor:
-            await self._calculate_and_send(context, redditor)
-
-    async def _calculate_and_send(self, context, user):
-        (
-            remaining,
-            sub_average,
-            sub_count,
-            subreddits,
-            subscribers,
-            zero_count,
-            top_20,
-        ) = await self.get_and_calculate_subs(user)
-        embed = self._gen_embed(user, sub_count, subscribers, sub_average, remaining, zero_count)
-        embed.add_field(name="Top 20 Subreddits", value=top_20, inline=False)
-        result = parse_sql(
-            await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", user), fetch_one=True
-        )
-        if result:
-            user = result.redditor
-            formatted_time = datetime.astimezone(result.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
-            previous_subscriber_count = result.subscribers
-            previous_sub_count = result.subreddits
-            embed.set_footer(
-                text=f"{sub_count - previous_sub_count:+,} Subreddits and {subscribers - previous_subscriber_count:+,} Subscribers since I last checked on {formatted_time}"
+            (
+                remaining,
+                sub_average,
+                sub_count,
+                subreddits,
+                subscribers,
+                zero_count,
+                top_20,
+            ) = await self.get_and_calculate_subs(redditor)
+            embed = self._gen_embed(redditor, sub_count, subscribers, sub_average, remaining, zero_count)
+            embed.add_field(name="Top 20 Subreddits", value=top_20, inline=False)
+            result = parse_sql(
+                await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor ilike $1", redditor),
+                fetch_one=True,
             )
-        else:
-            embed.set_footer(text=f"{sub_count:+,} Subreddits and {subscribers:+,} Subscribers")
-        data = (user, sub_count, subscribers)
-        results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor=$1", user))
-        if results:
-            await self.sql.execute(
-                "UPDATE public.moderators SET subreddits=$2, subscribers=$3 WHERE redditor=$1",
-                *data,
-            )
-        else:
-            await self.sql.execute(
-                "INSERT INTO public.moderators(redditor, subreddits, subscribers) VALUES ($1, $2, $3)",
-                *data,
-            )
-        await context.send(embed=embed)
+            if result:
+                user = result.redditor
+                formatted_time = datetime.astimezone(result.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
+                previous_subscriber_count = result.subscribers
+                previous_sub_count = result.subreddits
+                embed.set_footer(
+                    text=f"{sub_count - previous_sub_count:+,} Subreddits and {subscribers - previous_subscriber_count:+,} Subscribers since I last checked on {formatted_time}"
+                )
+            else:
+                embed.set_footer(text=f"{sub_count:+,} Subreddits and {subscribers:+,} Subscribers")
+            data = (user, sub_count, subscribers)
+            results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor=$1", user))
+            if results:
+                await self.sql.execute(
+                    "UPDATE public.moderators SET subreddits=$2, subscribers=$3 WHERE redditor=$1",
+                    *data,
+                )
+            else:
+                await self.sql.execute(
+                    "INSERT INTO public.moderators(redditor, subreddits, subscribers) VALUES ($1, $2, $3)",
+                    *data,
+                )
+            await context.send(embed=embed)
 
     async def _cancel_modqueue_counter(self, subscription):
         existing_task = self.running_counters.get(subscription.subreddit)

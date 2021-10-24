@@ -121,22 +121,22 @@ async def main():
         subreddits = list(subreddits)
         for chunk, subreddit_chunk in enumerate([subreddits[x : x + 3] for x in range(0, len(subreddits), 3)], 1):
             streams.append(start_streaming(subreddit_chunk, redditor, chunk))
-    if sys.platform != "darwin":
-        subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
-        chunks = list(
-            zip_longest(
-                *[
-                    reversed(chunk) if i % 2 == 0 else chunk
-                    for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
-                ]
-            )
-        )
-        for chunk, subreddit_chunk in enumerate(chunks, 1):
-            streams.append(
-                start_streaming(
-                    [sub.display_name for sub in subreddit_chunk if sub], "Lil_SpazJoekp", chunk, other_auth=True
-                )
-            )
+    # if sys.platform != "darwin":
+    #     subreddits = services.reddit("Lil_SpazJoekp").user.me().moderated()
+    #     chunks = list(
+    #         zip_longest(
+    #             *[
+    #                 reversed(chunk) if i % 2 == 0 else chunk
+    #                 for i, chunk in enumerate([subreddits[x : x + 25] for x in range(0, len(subreddits), 25)])
+    #             ]
+    #         )
+    #     )
+    #     for chunk, subreddit_chunk in enumerate(chunks, 1):
+    #         streams.append(
+    #             start_streaming(
+    #                 [sub.display_name for sub in subreddit_chunk if sub], "Lil_SpazJoekp", chunk, other_auth=True
+    #             )
+    #         )
     await asyncio.gather(*streams)
 
 

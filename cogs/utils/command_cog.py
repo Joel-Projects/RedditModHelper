@@ -135,7 +135,7 @@ class CommandCog(commands.Cog):
         try:
             with self.bot.temp_reddit(user) as reddit:
                 redditor = await reddit.user.me()
-        except NotFound:
+        except Exception:
             redditor = await self.reddit.redditor(user)
         subreddits = await redditor.moderated()
         _subscriber_totals = [subreddit.subscribers for subreddit in subreddits]

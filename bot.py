@@ -310,7 +310,10 @@ class RedditModHelper(commands.AutoShardedBot):
 
         def __enter__(self):
             log.debug(f"Switching to u/{self.user}")
-            return self.bot.services.reddit(self.user, asyncpraw=True)
+            try:
+                return self.bot.services.reddit(self.user, asyncpraw=True)
+            except Exception:
+                return self.bot.reddit
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             log.debug("Switching back to u/Lil_SpazJoekp")
