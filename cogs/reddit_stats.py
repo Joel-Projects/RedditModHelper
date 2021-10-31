@@ -516,7 +516,7 @@ class RedditStats(CommandCog):
         error_message = None
         if moderator:
             try:
-                redditor = await self.reddit.redditor(moderator)
+                redditor = await self.reddit.redditor(moderator, fetch=True)
                 redditor = redditor.name
             except asyncprawcore.NotFound:
                 error_message = (
@@ -532,6 +532,7 @@ class RedditStats(CommandCog):
                 error_message = "Please use `/stats <user>` or verify your Reddit account with `/verify`."
         if error_message:
             await self.error_embed(context, error_message)
+            return
         if redditor:
             (
                 remaining,
@@ -549,18 +550,18 @@ class RedditStats(CommandCog):
                 fetch_one=True,
             )
             if result:
-                user = result.redditor
                 formatted_time = datetime.astimezone(result.updated).strftime("%B %d, %Y at %I:%M:%S %p %Z")
                 previous_subscriber_count = result.subscribers
                 previous_sub_count = result.subreddits
                 embed.set_footer(
                     text=f"{sub_count - previous_sub_count:+,} Subreddits and {subscribers - previous_subscriber_count:+,} Subscribers since I last checked on {formatted_time}"
                 )
+                update = True
             else:
                 embed.set_footer(text=f"{sub_count:+,} Subreddits and {subscribers:+,} Subscribers")
-            data = (user, sub_count, subscribers)
-            results = parse_sql(await self.sql.fetch("SELECT * FROM public.moderators WHERE redditor=$1", user))
-            if results:
+                update = False
+            data = (redditor, sub_count, subscribers)
+            if update:
                 await self.sql.execute(
                     "UPDATE public.moderators SET subreddits=$2, subscribers=$3 WHERE redditor=$1",
                     *data,
