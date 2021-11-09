@@ -90,11 +90,11 @@ class ModLogStreams:
                                 has_admin = False
                             if new:
                                 last_action = time.time()
-                        except Exception as error:
-                            log.exception(error)
                         except asyncprawcore.ServerError as error:
                             log.info(error)
                             log.info((self.subreddits, await self.reddit.user.me()))
+                        except Exception as error:
+                            log.exception(error)
             except Exception as error:
                 log.exception(error)
 
