@@ -136,7 +136,6 @@ class SubredditManagement(CommandCog):
             auth_url = self.bot.credmgr_bot.redditApp.genAuthUrl(required_scopes, True)
             confirm = await context.prompt(
                 f"u/{mod_account} has not granted me permission yet, I will need you to authorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
-                channel=context.channel,
                 timeout=None,
             )
             if not confirm:
