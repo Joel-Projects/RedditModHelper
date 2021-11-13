@@ -22,9 +22,11 @@ from .models import Subreddit, Webhook
 
 
 class ModLogStreams:
-    def __init__(self, reddit_params, subreddits):
+    def __init__(self, reddit_params, subreddits, redditor):
+        self.redditor = redditor
         self.subreddits = subreddits
         self.reddit = asyncpraw.Reddit(**reddit_params, timeout=30)
+        self.killed = False
 
     async def _log_wrapper(self, subreddit, admin, stream):
         sub = await self.reddit.subreddit(subreddit)
@@ -38,11 +40,20 @@ class ModLogStreams:
                     modlog = sub.mod.log(mod=f"{'' if admin else '-'}a", limit=None)
                 async for action in modlog:
                     yield action, admin, stream
-            except Exception:
-                pass
+            except Exception as error:
+                if (
+                    error.response.status == 400
+                    and error.response.reason == "Bad Request"
+                    and str(error.response.url) == "https://www.reddit.com/api/v1/access_token"
+                ):
+                    log.error(f"Invalid auth for u/{self.redditor}, killing stream...")
+                    self.killed = True
+                    break
+                else:
+                    log.exception(error)
 
     async def run(self):
-        while True:
+        while not self.killed:
             try:
                 to_send = []
                 last_action = time.time()
@@ -73,8 +84,9 @@ class ModLogStreams:
                             if (
                                 len(to_send) >= 500
                                 or has_admin
-                                or (time.time() - last_action)
-                                > 10  # send if last new action was more than 10 seconds ago
+                                or (
+                                    (time.time() - last_action) > 10
+                                )  # send if last new action was more than 10 seconds ago
                             ) and to_send:
                                 if len(to_send) > 20:
                                     to_ingest = [to_send[x : x + 10] for x in range(0, len(to_send), 10)]
@@ -148,7 +160,7 @@ async def start_streaming(subreddits, redditor, chunk, other_auth=False):
         # else:
         reddit = services.reddit(redditor)
         reddit_params = reddit.config._settings
-        subreddit_streams = ModLogStreams(reddit_params, subreddits)
+        subreddit_streams = ModLogStreams(reddit_params, subreddits, redditor)
         log.info(f"Starting streams for r/{'+'.join(subreddits)}")
         await subreddit_streams.run()
     except NotFound as error:
@@ -159,10 +171,14 @@ def set_cache():
     log.info("Setting cache...")
     conn = connection_pool.getconn()
     sql = conn.cursor()
-    days = 100
+    days = 90
     log.info(f"Fetching last {days} days of ids...")
     beginning_time = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-    sql.execute("SELECT id FROM mirror.modlog WHERE created_utc>=%s", (beginning_time,))
+    subreddits = Subreddit.query.all()
+    sql.execute(
+        "SELECT id FROM mirror.modlog WHERE created_utc>=%s AND NOT subreddit=ANY(%s)",
+        (beginning_time, [subreddit.name for subreddit in subreddits]),
+    )
     results = sql.fetchall()
     connection_pool.putconn(conn)
     chunk_size = 50000
