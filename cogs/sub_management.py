@@ -117,7 +117,9 @@ class SubredditManagement(CommandCog):
             )
         )
         if results:
-            confirm = await context.prompt(f"r/{subreddit} is already added. Do you want to overwrite it?")
+            confirm = await context.prompt(
+                f"r/{subreddit} is already added. Do you want to overwrite it?", hidden=False
+            )
             if not confirm:
                 return
         required_scopes = ["identity", "modlog", "mysubreddits", "read", "modposts"]
@@ -129,6 +131,7 @@ class SubredditManagement(CommandCog):
                 confirm = await context.prompt(
                     f"My authorization for u/{mod_account} is not valid. I will need you to reauthorize me using this link:\n{auth_url}.\n\nOnce you are done, please confirm below.\n\nIf you have any questions, please contact <@393801572858986496>.",
                     timeout=None,
+                    hidden=False,
                 )
                 if not confirm:
                     await context.send("Cancelled")
