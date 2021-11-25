@@ -41,16 +41,17 @@ class ModLogStreams:
                 async for action in modlog:
                     yield action, admin, stream
             except Exception as error:
-                if (
-                    error.response.status == 400
-                    and error.response.reason == "Bad Request"
-                    and str(error.response.url) == "https://www.reddit.com/api/v1/access_token"
-                ):
-                    log.error(f"Invalid auth for u/{self.redditor}, killing stream...")
-                    self.killed = True
-                    break
-                else:
-                    log.exception(error)
+                if hasattr(error, "response"):
+                    if (
+                        error.response.status == 400
+                        and error.response.reason == "Bad Request"
+                        and str(error.response.url) == "https://www.reddit.com/api/v1/access_token"
+                    ):
+                        log.error(f"Invalid auth for u/{self.redditor}, killing stream...")
+                        self.killed = True
+                        break
+                    else:
+                        log.exception(error)
 
     async def run(self):
         while not self.killed:
